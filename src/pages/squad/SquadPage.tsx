@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Plus, Search, FileSpreadsheet, X, Check, ChevronLeft, ShieldCheck } from 'lucide-react'
 import { Avatar } from '@/components/Avatar'

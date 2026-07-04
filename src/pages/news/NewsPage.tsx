@@ -215,10 +215,11 @@ function CreatePostSheet({ teamColor, categories, defaultCategoryId, onSave, onC
         <div className="px-5 pb-8 pt-3 border-t border-gray-800 shrink-0">
           <button
             onClick={handleSave}
-            className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80"
+            disabled={saving}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
             style={{ background: teamColor, color: '#030712' }}
           >
-            <Check size={16} /> Publicar
+            <Check size={16} /> {saving ? 'Publicando...' : 'Publicar'}
           </button>
         </div>
       </div>

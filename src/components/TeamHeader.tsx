@@ -4,8 +4,6 @@ import { useTeamStore } from '@/store/authStore'
 import { mockTeam } from '@/lib/mock'
 import { initials } from '@/lib/utils'
 
-const GREETINGS = ['¡Buenas!', '¡Hola!', '¡Arriba!', '¡Dale!']
-
 function getGreeting() {
   const h = new Date().getHours()
   if (h < 12) return 'Buenos días'

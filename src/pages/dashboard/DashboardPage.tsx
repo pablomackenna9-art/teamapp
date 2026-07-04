@@ -77,7 +77,7 @@ const POST_META: Record<string, { label: string; color: string; emoji: string }>
 // ─── News carousel ────────────────────────────────────────────────────────────
 // categoryId=null (default) shows only general/home posts; pass a category id
 // to show only posts targeted at that specific category.
-function NewsCarousel({ teamColor, categoryId = null }: { teamColor: string; categoryId?: string | null }) {
+function NewsCarousel({ categoryId = null }: { teamColor: string; categoryId?: string | null }) {
   const [idx, setIdx] = useState(0)
   const { currentTeamId } = useTeamStore()
   const isDemo = !isSupabaseConfigured || isMockId(currentTeamId)
@@ -277,8 +277,8 @@ function CategoryMatchGridCard({ category, match, kind, onClick }: {
 }
 
 // ─── Compact standings mini table (for home grid) ─────────────────────────────
-function CompactStandings({ categoryId, categoryName, teamName, teamColor, rows, onSeeAll }: {
-  categoryId: string; categoryName: string; teamName: string; teamColor: string; rows: ComputedStanding[]; onSeeAll: () => void
+function CompactStandings({ categoryName, teamName, teamColor, rows, onSeeAll }: {
+  categoryName: string; teamName: string; teamColor: string; rows: ComputedStanding[]; onSeeAll: () => void
 }) {
   if (rows.length === 0) {
     return (
@@ -502,7 +502,6 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
               {categories.map(cat => (
                 <CompactStandings
                   key={cat.id}
-                  categoryId={cat.id}
                   categoryName={cat.name}
                   teamName={teamName}
                   teamColor={teamColor}
