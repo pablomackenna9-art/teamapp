@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { X, ShieldAlert } from 'lucide-react'
+import { X, ShieldAlert, Check } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { Avatar } from '@/components/Avatar'
-import { mockMatches, mockAttendance, mockPlayers } from '@/lib/mock'
 import { useTeamStore } from '@/store/authStore'
+import { useDemoStore } from '@/store/demoStore'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { isMockId } from '@/lib/storage'
+import type { AttendanceStatus, LineupSlot, Player } from '@/types'
+import toast from 'react-hot-toast'
 
 // ── Formations ────────────────────────────────────────────────────────────────
 
@@ -91,19 +94,56 @@ const POSITION_ABBR: Record<string, string> = {
   Arquero: 'ARQ', Defensor: 'DEF', Mediocampista: 'MED', Delantero: 'DEL',
 }
 
+// How far a player dot can be nudged off its formation slot, in percent of the pitch.
+const DRAG_RANGE = 10
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function LineupPage() {
   const { matchId } = useParams()
-  const { teamColor, memberRole, currentTeamId } = useTeamStore()
+  const { teamColor, memberRole, currentTeamId, fixtureMatches, updateFixtureMatch } = useTeamStore()
   // On the demo team, the admin account also previews DT-only tools so it can be shown to clients
-  const isDT = memberRole === 'dt' || (isMockId(currentTeamId) && memberRole === 'admin')
+  const isDemo = !isSupabaseConfigured || isMockId(currentTeamId)
+  const isDT = memberRole === 'dt' || (isDemo && memberRole === 'admin')
 
-  const match = mockMatches.find(m => m.id === matchId) ?? mockMatches[0]
+  const match = fixtureMatches.find(m => m.id === matchId)
 
-  const [formation, setFormation] = useState<Formation>('4-4-2')
-  const [lineup, setLineup] = useState<Record<string, string>>({}) // positionId → playerId
+  const demoPlayers = useDemoStore(s => s.players)
+  const [realPlayers, setRealPlayers] = useState<Player[]>([])
+  useEffect(() => {
+    if (isDemo || !currentTeamId || !match) return
+    supabase.from('players').select('*').eq('team_id', currentTeamId).eq('category_id', match.category_id)
+      .then(({ data }) => setRealPlayers(data ?? []))
+  }, [isDemo, currentTeamId, match?.category_id])
+  const allPlayers = isDemo ? demoPlayers.filter(p => p.category_id === match?.category_id) : realPlayers
+
+  const demoAttendanceByMatch = useDemoStore(s => s.attendanceByMatch)
+  const [realAttendance, setRealAttendance] = useState<Record<string, AttendanceStatus>>({})
+  useEffect(() => {
+    if (isDemo || !matchId) return
+    supabase.from('fixture_match_attendance').select('*').eq('fixture_match_id', matchId)
+      .then(({ data }) => {
+        const map: Record<string, AttendanceStatus> = {}
+        for (const row of data ?? []) map[row.player_id] = row.status
+        setRealAttendance(map)
+      })
+  }, [isDemo, matchId])
+  const attendanceMap = isDemo ? (demoAttendanceByMatch[matchId ?? ''] ?? {}) : realAttendance
+  const confirmedIds = new Set(Object.entries(attendanceMap).filter(([, s]) => s === 'confirmed').map(([id]) => id))
+
+  const [formation, setFormation] = useState<Formation>((match?.formation as Formation) || '4-4-2')
+  const [lineup, setLineup] = useState<Record<string, LineupSlot>>(match?.lineup ?? {})
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const pitchRef = useRef<HTMLDivElement>(null)
+  const dragState = useRef<{ slotId: string; moved: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!match) return
+    setFormation((match.formation as Formation) || '4-4-2')
+    setLineup(match.lineup ?? {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match?.id])
 
   if (!isDT) {
     return (
@@ -120,18 +160,22 @@ export function LineupPage() {
     )
   }
 
-  const confirmedIds = new Set(
-    mockAttendance.filter(a => a.status === 'confirmed').map(a => a.player_id)
-  )
+  if (!match) {
+    return (
+      <div className="max-w-lg mx-auto pb-8">
+        <PageHeader title="Formación" back />
+        <p className="text-gray-500 text-sm text-center py-12">No se encontró este partido.</p>
+      </div>
+    )
+  }
 
-  const allPlayers = mockPlayers
-  const assignedPlayerIds = new Set(Object.values(lineup))
+  const assignedPlayerIds = new Set(Object.values(lineup).map(s => s.playerId))
   const benchPlayers = allPlayers.filter(p => !assignedPlayerIds.has(p.id))
 
   // Confirmed headcount by position group — helps the DT see what he has available
   const positionCounts = POSITION_GROUPS.map(pos => ({
     pos,
-    count: mockPlayers.filter(p => p.position === pos && confirmedIds.has(p.id)).length,
+    count: allPlayers.filter(p => p.position === pos && confirmedIds.has(p.id)).length,
   }))
 
   const slots = FORMATIONS[formation]
@@ -139,10 +183,10 @@ export function LineupPage() {
   function assignPlayer(playerId: string) {
     if (!selectedSlot) return
     const newLineup = { ...lineup }
-    for (const [slotId, pId] of Object.entries(newLineup)) {
-      if (pId === playerId) delete newLineup[slotId]
+    for (const [slotId, slot] of Object.entries(newLineup)) {
+      if (slot.playerId === playerId) delete newLineup[slotId]
     }
-    newLineup[selectedSlot] = playerId
+    newLineup[selectedSlot] = { playerId }
     setLineup(newLineup)
     setSelectedSlot(null)
   }
@@ -154,11 +198,50 @@ export function LineupPage() {
     if (selectedSlot === slotId) setSelectedSlot(null)
   }
 
+  function handlePointerDown(e: React.PointerEvent, slotId: string) {
+    if (!lineup[slotId]) return
+    e.stopPropagation()
+    dragState.current = { slotId, moved: false }
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    const drag = dragState.current
+    if (!drag || !pitchRef.current) return
+    const rect = pitchRef.current.getBoundingClientRect()
+    const slot = slots.find(s => s.id === drag.slotId)
+    if (!slot) return
+    const px = ((e.clientX - rect.left) / rect.width) * 100
+    const py = ((e.clientY - rect.top) / rect.height) * 100
+    let dx = px - slot.x
+    let dy = py - slot.y
+    dx = Math.max(-DRAG_RANGE, Math.min(DRAG_RANGE, dx))
+    dy = Math.max(-DRAG_RANGE, Math.min(DRAG_RANGE, dy))
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) drag.moved = true
+    setLineup(prev => ({ ...prev, [drag.slotId]: { ...prev[drag.slotId], dx, dy } }))
+  }
+
+  function handlePointerUp(slotId: string) {
+    const drag = dragState.current
+    dragState.current = null
+    if (drag && !drag.moved) {
+      // Treat as a tap, not a drag — toggle selection like before
+      setSelectedSlot(prev => prev === slotId ? null : slotId)
+    }
+  }
+
   const filledCount = Object.keys(lineup).length
+
+  async function handleSaveFormation() {
+    setSaving(true)
+    updateFixtureMatch(matchId!, { formation, lineup })
+    setSaving(false)
+    toast.success('Formación guardada')
+  }
 
   return (
     <div className="max-w-lg mx-auto pb-8">
-      <PageHeader title={`vs ${match.rival} — Formación`} back />
+      <PageHeader title="Formación" back />
 
       {/* Confirmed headcount by position */}
       <div className="grid grid-cols-4 gap-2 px-4 pb-3">
@@ -187,11 +270,17 @@ export function LineupPage() {
         ))}
       </div>
 
+      <p className="text-gray-600 text-[11px] px-4 pb-2">
+        Tocá un jugador en cancha para asignarlo, o arrastralo un poco para ajustar su posición exacta.
+      </p>
+
       {/* Pitch */}
       <div className="mx-4 mb-4">
         <div
-          className="relative rounded-2xl overflow-hidden"
+          ref={pitchRef}
+          className="relative rounded-2xl overflow-hidden touch-none"
           style={{ background: '#1a3a1a', border: '2px solid #2d5a2d', aspectRatio: '9/13' }}
+          onPointerMove={handlePointerMove}
         >
           {/* Field markings */}
           <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 100 140" preserveAspectRatio="none">
@@ -209,24 +298,21 @@ export function LineupPage() {
 
           {/* Position slots */}
           {slots.map(slot => {
-            const playerId = lineup[slot.id]
-            const player = playerId ? allPlayers.find(p => p.id === playerId) : null
+            const assigned = lineup[slot.id]
+            const player = assigned ? allPlayers.find(p => p.id === assigned.playerId) : null
             const playerConfirmed = player ? confirmedIds.has(player.id) : false
             const isSelected = selectedSlot === slot.id
+            const left = slot.x + (assigned?.dx ?? 0)
+            const top = slot.y + (assigned?.dy ?? 0)
 
             return (
               <button
                 key={slot.id}
-                onClick={() => {
-                  if (player) {
-                    if (isSelected) { setSelectedSlot(null) }
-                    else { setSelectedSlot(slot.id) }
-                  } else {
-                    setSelectedSlot(isSelected ? null : slot.id)
-                  }
-                }}
+                onPointerDown={e => handlePointerDown(e, slot.id)}
+                onPointerUp={() => handlePointerUp(slot.id)}
+                onClick={() => { if (!player) setSelectedSlot(isSelected ? null : slot.id) }}
                 className="absolute flex flex-col items-center gap-0.5 -translate-x-1/2 -translate-y-1/2 transition-transform active:scale-90"
-                style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
+                style={{ left: `${left}%`, top: `${top}%`, touchAction: 'none' }}
               >
                 {/* Circle */}
                 <div
@@ -301,6 +387,17 @@ export function LineupPage() {
         </div>
       </div>
 
+      <div className="px-4 mb-4">
+        <button
+          onClick={handleSaveFormation}
+          disabled={saving}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-sm disabled:opacity-60"
+          style={{ background: teamColor, color: '#030712' }}
+        >
+          <Check size={16} /> {saving ? 'Guardando...' : 'Guardar formación'}
+        </button>
+      </div>
+
       {/* Player list */}
       <div className="px-4">
         <p className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
@@ -354,6 +451,9 @@ export function LineupPage() {
               </button>
             )
           })}
+          {allPlayers.length === 0 && (
+            <p className="text-gray-500 text-sm text-center py-8">No hay jugadores cargados en esta categoría.</p>
+          )}
         </div>
 
         {/* Bench (not assigned) */}

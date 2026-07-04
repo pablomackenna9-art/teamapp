@@ -184,6 +184,41 @@ export interface FixtureMatch {
   home_score: number | null
   away_score: number | null
   played: boolean
+  location?: string | null
+  formation?: string | null
+  lineup?: Record<string, LineupSlot>
+}
+
+export interface LineupSlot {
+  playerId: string
+  dx?: number
+  dy?: number
+}
+
+export type FixtureEventType = 'goal' | 'assist' | 'yellow_card' | 'red_card'
+
+export interface FixtureMatchEvent {
+  id: string
+  fixture_match_id: string
+  player_id: string
+  type: FixtureEventType
+  created_at: string
+}
+
+export interface FixtureMatchAttendance {
+  id: string
+  fixture_match_id: string
+  player_id: string
+  status: AttendanceStatus
+  updated_at: string
+}
+
+export interface FixtureMatchMvpVote {
+  id: string
+  fixture_match_id: string
+  voter_player_id: string
+  target_player_id: string
+  updated_at: string
 }
 
 export interface MvpVote {

@@ -1,17 +1,16 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { mockCategories, mockFixture, mockPointsPerWin, mockPlayers, mockPosts, mockTeam, mockTitles } from '@/lib/mock'
-import type { Category, FixtureMatch, MatchType, Player, PlayerResponsibility, Post, AttendanceStatus } from '@/types'
+import type { Category, FixtureMatch, Player, PlayerResponsibility, Post, AttendanceStatus, FixtureEventType } from '@/types'
 import type { MockTitle } from '@/lib/mock'
 import sponsorGatorade from '@/assets/sponsor-gatorade.jpg'
 
 export const MAX_EXTRA_COORDINADORES = 2
 
-interface MatchOverride {
-  rival?: string
-  type?: MatchType
-  date?: string
-  location?: string
+export interface DemoMatchEvent {
+  id: string
+  player_id: string
+  type: FixtureEventType
 }
 
 interface DemoState {
@@ -25,10 +24,10 @@ interface DemoState {
   titles: MockTitle[]
   mvpVotesByMatch: Record<string, Record<string, string>>
   votingClosedByMatch: Record<string, boolean>
-  matchOverrides: Record<string, MatchOverride>
   sponsors: string[]
   activeSponsor: string | null
   attendanceByMatch: Record<string, Record<string, AttendanceStatus>>
+  matchEventsByMatch: Record<string, DemoMatchEvent[]>
 
   setTeamName: (name: string) => void
   setTeamLogo: (url: string | null) => void
@@ -43,7 +42,6 @@ interface DemoState {
   addPost: (post: Post) => void
   setMvpVote: (matchId: string, voterId: string, playerId: string) => void
   setVotingClosed: (matchId: string, closed: boolean) => void
-  setMatchOverride: (matchId: string, patch: MatchOverride) => void
   addSponsor: (url: string) => void
   removeSponsor: (index: number) => void
   setActiveSponsor: (url: string | null) => void
@@ -52,6 +50,8 @@ interface DemoState {
   setPlayerEmail: (playerId: string, email: string | null) => void
   addTitle: (title: MockTitle) => void
   removeTitle: (id: string) => void
+  addMatchEvent: (matchId: string, playerId: string, type: FixtureEventType) => void
+  removeMatchEvent: (matchId: string, eventId: string) => void
   resetDemo: () => void
 }
 
@@ -66,10 +66,10 @@ const seed = {
   titles: mockTitles,
   mvpVotesByMatch: {} as Record<string, Record<string, string>>,
   votingClosedByMatch: {} as Record<string, boolean>,
-  matchOverrides: {} as Record<string, MatchOverride>,
   sponsors: [sponsorGatorade] as string[],
   activeSponsor: sponsorGatorade as string | null,
   attendanceByMatch: {} as Record<string, Record<string, AttendanceStatus>>,
+  matchEventsByMatch: {} as Record<string, DemoMatchEvent[]>,
 }
 
 export const useDemoStore = create<DemoState>()(
@@ -115,10 +115,6 @@ export const useDemoStore = create<DemoState>()(
         votingClosedByMatch: { ...state.votingClosedByMatch, [matchId]: closed },
       })),
 
-      setMatchOverride: (matchId, patch) => set(state => ({
-        matchOverrides: { ...state.matchOverrides, [matchId]: { ...(state.matchOverrides[matchId] ?? {}), ...patch } },
-      })),
-
       addSponsor: (url) => set(state => ({ sponsors: [...state.sponsors, url] })),
       removeSponsor: (index) => set(state => {
         const removed = state.sponsors[index]
@@ -159,6 +155,18 @@ export const useDemoStore = create<DemoState>()(
       addTitle: (title) => set(state => ({ titles: [...state.titles, title] })),
       removeTitle: (id) => set(state => ({ titles: state.titles.filter(t => t.id !== id) })),
 
+      addMatchEvent: (matchId, playerId, type) => set(state => ({
+        matchEventsByMatch: {
+          ...state.matchEventsByMatch,
+          [matchId]: [...(state.matchEventsByMatch[matchId] ?? []), { id: `evt-${Date.now()}`, player_id: playerId, type }],
+        },
+      })),
+      removeMatchEvent: (matchId, eventId) => set(state => ({
+        matchEventsByMatch: {
+          ...state.matchEventsByMatch,
+          [matchId]: (state.matchEventsByMatch[matchId] ?? []).filter(e => e.id !== eventId),
+        },
+      })),
       resetDemo: () => set(seed),
     }),
     { name: 'teamapp-demo-data' }

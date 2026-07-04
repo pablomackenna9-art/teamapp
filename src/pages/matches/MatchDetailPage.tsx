@@ -1,34 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Star, Users, FileText, ClipboardList, Lock, Unlock, Check, Pencil, X } from 'lucide-react'
+import { Star, Users, Goal, ClipboardList, Lock, Unlock, Check, Pencil, X, Plus, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
-import { Badge } from '@/components/Badge'
 import { Avatar } from '@/components/Avatar'
-import { Card } from '@/components/Card'
-import { mockMatches, mockAttendance, mockPlayers, mockTeam } from '@/lib/mock'
-import { formatDateTime } from '@/lib/utils'
-import { useTeamStore } from '@/store/authStore'
+import { useTeamStore, useAuthStore } from '@/store/authStore'
 import { useDemoStore } from '@/store/demoStore'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { isMockId } from '@/lib/storage'
-import type { AttendanceStatus, MatchType } from '@/types'
+import { ourMatches, ourScore, theirScore } from '@/lib/matches'
+import { formatDateTime } from '@/lib/utils'
+import type { AttendanceStatus, FixtureEventType, Player } from '@/types'
 import toast from 'react-hot-toast'
 
-// Demo stand-in for "who am I" — in real app this maps to the logged-in user's player row
-const CURRENT_PLAYER_ID = 'p5'
-
-// Seed a few votes already cast by teammates, keyed by voter player id (first run only)
-const SEED_MVP_VOTES: Record<string, string> = {
-  p1: 'p6',
-  p2: 'p6',
-  p3: 'p7',
-  p4: 'p6',
-  p7: 'p5',
-  p8: 'p6',
-  p9: 'p5',
-  p10: 'p7',
-}
-
-type Tab = 'attendance' | 'mvp' | 'summary'
+type Tab = 'events' | 'attendance' | 'mvp'
 
 const ATTENDANCE_OPTIONS: { value: AttendanceStatus, label: string, color: string }[] = [
   { value: 'confirmed', label: '✅ Voy', color: '#22c55e' },
@@ -36,29 +20,32 @@ const ATTENDANCE_OPTIONS: { value: AttendanceStatus, label: string, color: strin
   { value: 'absent', label: '❌ No voy', color: '#ef4444' },
 ]
 
-// Sort order for the attendance list — confirmed players float to the top
 const ATTENDANCE_ORDER: Record<AttendanceStatus, number> = {
-  confirmed: 0,
-  maybe: 1,
-  no_response: 2,
-  absent: 3,
+  confirmed: 0, maybe: 1, no_response: 2, absent: 3,
 }
 
-// ── Edit upcoming match sheet — coordinadores can adjust type, date, rival, location ──
-function EditMatchSheet({ match, teamColor, onClose, onSave }: {
-  match: typeof mockMatches[0]
-  teamColor: string
+const EVENT_META: Record<FixtureEventType, { label: string; emoji: string; color: string }> = {
+  goal: { label: 'Goles', emoji: '⚽', color: '#22c55e' },
+  assist: { label: 'Asistencias', emoji: '🅰️', color: '#3b82f6' },
+  yellow_card: { label: 'Amarillas', emoji: '🟨', color: '#eab308' },
+  red_card: { label: 'Rojas', emoji: '🟥', color: '#ef4444' },
+}
+
+interface DemoEvent { id: string; player_id: string; type: FixtureEventType }
+
+// ── Edit upcoming match sheet — coordinadores can adjust rival, date, location ──
+function EditMatchSheet({ rival, date, location, teamColor, onClose, onSave }: {
+  rival: string; date: string; location: string; teamColor: string
   onClose: () => void
-  onSave: (patch: { rival: string; type: MatchType; date: string; location: string }) => void
+  onSave: (patch: { rival: string; date: string; location: string }) => void
 }) {
-  const [rival, setRival] = useState(match.rival)
-  const [type, setType] = useState<MatchType>(match.type)
-  const [date, setDate] = useState(match.date.slice(0, 16))
-  const [location, setLocation] = useState(match.location ?? '')
+  const [rivalName, setRivalName] = useState(rival)
+  const [dateVal, setDateVal] = useState(date.slice(0, 16))
+  const [locationVal, setLocationVal] = useState(location)
 
   function handleSave() {
-    if (!rival.trim()) { toast.error('Ingresá el rival'); return }
-    onSave({ rival: rival.trim(), type, date: new Date(date).toISOString(), location: location.trim() })
+    if (!rivalName.trim()) { toast.error('Ingresá el rival'); return }
+    onSave({ rival: rivalName.trim(), date: new Date(dateVal).toISOString(), location: locationVal.trim() })
     toast.success('Partido actualizado')
     onClose()
   }
@@ -78,37 +65,18 @@ function EditMatchSheet({ match, teamColor, onClose, onSave }: {
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Rival</p>
             <input
-              value={rival}
-              onChange={e => setRival(e.target.value)}
+              value={rivalName}
+              onChange={e => setRivalName(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm outline-none"
             />
-          </div>
-
-          <div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Tipo</p>
-            <div className="flex gap-2">
-              {(['official', 'friendly'] as MatchType[]).map(t => (
-                <button
-                  key={t}
-                  onClick={() => setType(t)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold border transition-colors"
-                  style={type === t
-                    ? { background: teamColor + '25', borderColor: teamColor, color: teamColor }
-                    : { background: 'transparent', borderColor: '#374151', color: '#6b7280' }
-                  }
-                >
-                  {t === 'official' ? 'Oficial' : 'Amistoso'}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Fecha y hora</p>
             <input
               type="datetime-local"
-              value={date}
-              onChange={e => setDate(e.target.value)}
+              value={dateVal}
+              onChange={e => setDateVal(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm outline-none"
             />
           </div>
@@ -116,8 +84,8 @@ function EditMatchSheet({ match, teamColor, onClose, onSave }: {
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Ubicación</p>
             <input
-              value={location}
-              onChange={e => setLocation(e.target.value)}
+              value={locationVal}
+              onChange={e => setLocationVal(e.target.value)}
               placeholder="Cancha Municipal"
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm outline-none"
             />
@@ -139,90 +107,196 @@ function EditMatchSheet({ match, teamColor, onClose, onSave }: {
 export function MatchDetailPage() {
   const { slug, matchId } = useParams()
   const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>('attendance')
+  const [tab, setTab] = useState<Tab>('events')
   const [showEdit, setShowEdit] = useState(false)
-  const { teamColor, memberRole, currentTeamId } = useTeamStore()
-  const isDT = memberRole === 'dt' || (isMockId(currentTeamId) && memberRole === 'admin')
+  const { teamColor, teamName, memberRole, currentTeamId, fixtureMatches, updateFixtureMatch } = useTeamStore()
+  const { user } = useAuthStore()
+  const isDemo = !isSupabaseConfigured || isMockId(currentTeamId)
+  const isDT = memberRole === 'dt' || (isDemo && memberRole === 'admin')
   const isCoordinador = memberRole === 'admin' || memberRole === 'coordinador'
 
-  const baseMatch = mockMatches.find(m => m.id === matchId) ?? mockMatches[0]
-  const matchOverrides = useDemoStore(s => s.matchOverrides)
-  const setMatchOverride = useDemoStore(s => s.setMatchOverride)
-  const match = { ...baseMatch, ...matchOverrides[baseMatch.id] }
+  const fixtureMatch = fixtureMatches.find(m => m.id === matchId)
+  const display = fixtureMatch ? ourMatches([fixtureMatch], teamName)[0] : undefined
 
-  // Attendance persists in the demo store, keyed per match+player, so marking
-  // Voy/Duda/No voy immediately moves the player up/down the confirmed list and counts
-  const attendanceByMatch = useDemoStore(s => s.attendanceByMatch)
-  const setAttendanceDemo = useDemoStore(s => s.setAttendance)
-  const attendanceOverrides = attendanceByMatch[match.id] ?? {}
-  const attendance = mockAttendance.map(a => ({
-    ...a,
-    status: attendanceOverrides[a.player_id] ?? a.status,
-  }))
-  const myAttendance = attendance.find(a => a.player_id === CURRENT_PLAYER_ID)?.status ?? 'no_response'
+  // ── Players for this match's category ──────────────────────────────────────
+  const demoPlayers = useDemoStore(s => s.players)
+  const [realPlayers, setRealPlayers] = useState<Player[]>([])
+  useEffect(() => {
+    if (isDemo || !currentTeamId || !fixtureMatch) return
+    supabase.from('players').select('*').eq('team_id', currentTeamId).eq('category_id', fixtureMatch.category_id)
+      .then(({ data }) => setRealPlayers(data ?? []))
+  }, [isDemo, currentTeamId, fixtureMatch?.category_id])
+  const players = isDemo
+    ? demoPlayers.filter(p => p.category_id === fixtureMatch?.category_id)
+    : realPlayers
 
-  // MVP votes persist in the demo store so they survive reloads/logout
-  const votesByMatch = useDemoStore(s => s.mvpVotesByMatch)
-  const setMvpVote = useDemoStore(s => s.setMvpVote)
-  const votingClosedByMatch = useDemoStore(s => s.votingClosedByMatch)
-  const setVotingClosedDemo = useDemoStore(s => s.setVotingClosed)
+  const myPlayer = isDemo
+    ? players.find(p => p.id === 'p5') ?? players[0]
+    : players.find(p => p.user_id === user?.id)
 
-  const mvpVotesByVoter = votesByMatch[match.id] ?? SEED_MVP_VOTES
-  const votingClosed = votingClosedByMatch[match.id] ?? false
+  // ── Attendance ───────────────────────────────────────────────────────────────
+  const demoAttendanceByMatch = useDemoStore(s => s.attendanceByMatch)
+  const setDemoAttendance = useDemoStore(s => s.setAttendance)
+  const [realAttendance, setRealAttendance] = useState<Record<string, AttendanceStatus>>({})
+
+  useEffect(() => {
+    if (isDemo || !matchId) return
+    supabase.from('fixture_match_attendance').select('*').eq('fixture_match_id', matchId)
+      .then(({ data }) => {
+        const map: Record<string, AttendanceStatus> = {}
+        for (const row of data ?? []) map[row.player_id] = row.status
+        setRealAttendance(map)
+      })
+  }, [isDemo, matchId])
+
+  const attendanceMap = isDemo ? (demoAttendanceByMatch[matchId ?? ''] ?? {}) : realAttendance
+  const attendanceList = players.map(p => ({ player: p, status: attendanceMap[p.id] ?? 'no_response' as AttendanceStatus }))
+  const myAttendance = myPlayer ? (attendanceMap[myPlayer.id] ?? 'no_response') : 'no_response'
+
+  async function markAttendance(playerId: string, status: AttendanceStatus) {
+    if (isDemo) {
+      setDemoAttendance(matchId!, playerId, status)
+    } else {
+      setRealAttendance(prev => ({ ...prev, [playerId]: status }))
+      const { error } = await supabase.from('fixture_match_attendance')
+        .upsert({ team_id: currentTeamId, fixture_match_id: matchId, player_id: playerId, status }, { onConflict: 'fixture_match_id,player_id' })
+      if (error) toast.error(error.message)
+    }
+  }
 
   const attendanceSummary = {
-    confirmed: attendance.filter(a => a.status === 'confirmed').length,
-    maybe: attendance.filter(a => a.status === 'maybe').length,
-    absent: attendance.filter(a => a.status === 'absent').length,
-    no_response: attendance.filter(a => a.status === 'no_response').length,
+    confirmed: attendanceList.filter(a => a.status === 'confirmed').length,
+    maybe: attendanceList.filter(a => a.status === 'maybe').length,
+    absent: attendanceList.filter(a => a.status === 'absent').length,
+    no_response: attendanceList.filter(a => a.status === 'no_response').length,
   }
 
-  function markMyAttendance(status: AttendanceStatus) {
-    setAttendanceDemo(match.id, CURRENT_PLAYER_ID, status)
-  }
+  // ── MVP voting ───────────────────────────────────────────────────────────────
+  const demoVotesByMatch = useDemoStore(s => s.mvpVotesByMatch)
+  const setDemoMvpVote = useDemoStore(s => s.setMvpVote)
+  const demoVotingClosedByMatch = useDemoStore(s => s.votingClosedByMatch)
+  const setDemoVotingClosed = useDemoStore(s => s.setVotingClosed)
+  const [realVotes, setRealVotes] = useState<Record<string, string>>({})
+  const [votingClosed, setVotingClosed] = useState(false)
 
-  const myVote = mvpVotesByVoter[CURRENT_PLAYER_ID] ?? null
-  const canVote = !votingClosed || isCoordinador
+  useEffect(() => {
+    if (isDemo || !matchId) return
+    supabase.from('fixture_match_mvp_votes').select('*').eq('fixture_match_id', matchId)
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        for (const row of data ?? []) map[row.voter_player_id] = row.target_player_id
+        setRealVotes(map)
+      })
+  }, [isDemo, matchId])
 
-  function castVote(playerId: string) {
-    if (votingClosed && !isCoordinador) { toast.error('La votación está cerrada'); return }
-    setMvpVote(match.id, CURRENT_PLAYER_ID, playerId)
-    toast.success(`Votaste a ${mockPlayers.find(p => p.id === playerId)?.name}`)
+  const votesByVoter = isDemo ? (demoVotesByMatch[matchId ?? ''] ?? {}) : realVotes
+  const votingClosedFinal = isDemo ? (demoVotingClosedByMatch[matchId ?? ''] ?? false) : votingClosed
+  const myVote = myPlayer ? (votesByVoter[myPlayer.id] ?? null) : null
+  const canVote = !votingClosedFinal || isCoordinador
+
+  async function castVote(targetId: string) {
+    if (!myPlayer) { toast.error('No se encontró tu jugador en el plantel'); return }
+    if (votingClosedFinal && !isCoordinador) { toast.error('La votación está cerrada'); return }
+    if (isDemo) {
+      setDemoMvpVote(matchId!, myPlayer.id, targetId)
+    } else {
+      setRealVotes(prev => ({ ...prev, [myPlayer.id]: targetId }))
+      const { error } = await supabase.from('fixture_match_mvp_votes')
+        .upsert({ team_id: currentTeamId, fixture_match_id: matchId, voter_player_id: myPlayer.id, target_player_id: targetId }, { onConflict: 'fixture_match_id,voter_player_id' })
+      if (error) toast.error(error.message)
+    }
+    toast.success(`Votaste a ${players.find(p => p.id === targetId)?.name}`)
   }
 
   function toggleVotingClosed() {
-    setVotingClosedDemo(match.id, !votingClosed)
-    toast.success(votingClosed ? 'Votación reabierta' : 'Votación cerrada')
+    if (isDemo) {
+      setDemoVotingClosed(matchId!, !votingClosedFinal)
+    } else {
+      setVotingClosed(v => !v)
+    }
+    toast.success(votingClosedFinal ? 'Votación reabierta' : 'Votación cerrada')
   }
 
-  // Live tally computed from actual votes cast
-  const mvpVotes = mockPlayers.map(p => ({
+  const mvpTally = players.map(p => ({
     player: p,
-    votes: Object.values(mvpVotesByVoter).filter(v => v === p.id).length,
+    votes: Object.values(votesByVoter).filter(v => v === p.id).length,
   })).sort((a, b) => b.votes - a.votes)
 
-  // Who voted for whom (voter identity is visible to teammates)
-  const voterEntries = Object.entries(mvpVotesByVoter)
+  const voterEntries = Object.entries(votesByVoter)
     .map(([voterId, targetId]) => ({
-      voter: mockPlayers.find(p => p.id === voterId),
-      target: mockPlayers.find(p => p.id === targetId),
-      isMe: voterId === CURRENT_PLAYER_ID,
+      voter: players.find(p => p.id === voterId),
+      target: players.find(p => p.id === targetId),
+      isMe: voterId === myPlayer?.id,
     }))
     .filter(e => e.voter && e.target)
 
+  // ── Goals / assists / cards ──────────────────────────────────────────────────
+  const demoEventsByMatch = useDemoStore(s => s.matchEventsByMatch)
+  const addDemoEvent = useDemoStore(s => s.addMatchEvent)
+  const removeDemoEvent = useDemoStore(s => s.removeMatchEvent)
+  const [realEvents, setRealEvents] = useState<DemoEvent[]>([])
+
+  async function loadRealEvents() {
+    if (isDemo || !matchId) return
+    const { data } = await supabase.from('fixture_match_events').select('*').eq('fixture_match_id', matchId)
+    setRealEvents((data ?? []).map(e => ({ id: e.id, player_id: e.player_id, type: e.type })))
+  }
+  useEffect(() => { loadRealEvents() }, [isDemo, matchId])
+
+  const events: DemoEvent[] = isDemo ? (demoEventsByMatch[matchId ?? ''] ?? []) : realEvents
+
+  const [newEventPlayer, setNewEventPlayer] = useState<string>('')
+  const [newEventType, setNewEventType] = useState<FixtureEventType>('goal')
+
+  async function addEvent() {
+    if (!newEventPlayer) { toast.error('Elegí un jugador'); return }
+    if (isDemo) {
+      addDemoEvent(matchId!, newEventPlayer, newEventType)
+    } else {
+      const { error } = await supabase.from('fixture_match_events').insert({
+        team_id: currentTeamId, fixture_match_id: matchId, player_id: newEventPlayer, type: newEventType,
+      })
+      if (error) { toast.error(error.message); return }
+      loadRealEvents()
+    }
+    toast.success('Evento agregado')
+  }
+
+  async function removeEvent(eventId: string) {
+    if (isDemo) {
+      removeDemoEvent(matchId!, eventId)
+    } else {
+      const { error } = await supabase.from('fixture_match_events').delete().eq('id', eventId)
+      if (error) { toast.error(error.message); return }
+      loadRealEvents()
+    }
+  }
+
+  if (!fixtureMatch || !display) {
+    return (
+      <div className="max-w-lg mx-auto pb-8">
+        <PageHeader title="Partido" back />
+        <p className="text-gray-500 text-sm text-center py-12">No se encontró este partido.</p>
+      </div>
+    )
+  }
+
+  const os = ourScore(display)
+  const ts = theirScore(display)
+
   const tabs = [
+    { key: 'events' as Tab, label: 'Goles y tarjetas', icon: Goal },
     { key: 'attendance' as Tab, label: 'Asistencia', icon: Users },
     { key: 'mvp' as Tab, label: 'MVP', icon: Star },
-    { key: 'summary' as Tab, label: 'Resumen', icon: FileText },
   ]
 
   return (
     <div className="max-w-lg mx-auto pb-8">
-      <PageHeader title={`vs ${match.rival}`} back />
+      <PageHeader title={`vs ${display.rival}`} back />
 
       {/* Match header */}
       <div className="mx-4 mb-4 rounded-2xl overflow-hidden relative" style={{ background: `linear-gradient(135deg, ${teamColor}22, #1f2937)` }}>
-        {isCoordinador && match.status === 'upcoming' && (
+        {isCoordinador && !display.played && (
           <button
             onClick={() => setShowEdit(true)}
             className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center bg-black/40 text-white hover:bg-black/60 transition-colors z-10"
@@ -232,40 +306,35 @@ export function MatchDetailPage() {
         )}
 
         <div className="p-5 text-center">
-          <div className="flex items-center justify-center gap-2 mb-3">
-            <Badge variant={match.type === 'official' ? 'team' : 'default'}>
-              {match.type === 'official' ? 'Oficial' : 'Amistoso'}
-            </Badge>
-            <span className="text-gray-500 text-xs">{formatDateTime(match.date)}</span>
-          </div>
+          <span className="text-gray-500 text-xs">{formatDateTime(display.date)}</span>
 
-          {match.status === 'played' ? (
-            <div className="flex items-center justify-center gap-6">
+          {display.played ? (
+            <div className="flex items-center justify-center gap-6 mt-3">
               <div className="text-center">
-                <p className="text-gray-400 text-xs mb-1">{mockTeam.name}</p>
-                <p className="text-5xl font-black text-white">{match.home_score}</p>
+                <p className="text-gray-400 text-xs mb-1">{teamName}</p>
+                <p className="text-5xl font-black text-white">{os}</p>
               </div>
               <p className="text-gray-600 text-2xl">-</p>
               <div className="text-center">
-                <p className="text-gray-400 text-xs mb-1">{match.rival}</p>
-                <p className="text-5xl font-black text-white">{match.away_score}</p>
+                <p className="text-gray-400 text-xs mb-1">{display.rival}</p>
+                <p className="text-5xl font-black text-white">{ts}</p>
               </div>
             </div>
           ) : (
-            <p className="text-white text-xl font-bold">{match.rival}</p>
+            <p className="text-white text-xl font-bold mt-2">{display.rival}</p>
           )}
 
-          {match.location && (
-            <p className="text-gray-500 text-xs mt-3">📍 {match.location}</p>
+          {display.location && (
+            <p className="text-gray-500 text-xs mt-3">📍 {display.location}</p>
           )}
 
           {/* Quick attendance for upcoming */}
-          {match.status === 'upcoming' && (
+          {!display.played && myPlayer && (
             <div className="flex gap-2 justify-center mt-4">
               {ATTENDANCE_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
-                  onClick={() => markMyAttendance(opt.value)}
+                  onClick={() => markAttendance(myPlayer.id, opt.value)}
                   className="px-3 py-2 rounded-xl text-sm font-medium transition-all"
                   style={myAttendance === opt.value
                     ? { background: opt.color, color: '#030712' }
@@ -276,6 +345,18 @@ export function MatchDetailPage() {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* DT lineup button — upcoming matches */}
+          {isDT && !display.played && (
+            <button
+              onClick={() => navigate(`/team/${slug}/matches/${matchId}/lineup`)}
+              className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl font-bold text-sm mt-4 transition-opacity active:opacity-80"
+              style={{ background: teamColor, color: '#030712' }}
+            >
+              <ClipboardList size={16} />
+              Armar equipo y formación
+            </button>
           )}
         </div>
       </div>
@@ -298,10 +379,87 @@ export function MatchDetailPage() {
       </div>
 
       <div className="px-4">
+        {/* Events tab: goals / assists / cards */}
+        {tab === 'events' && (
+          <div>
+            {isCoordinador && (
+              <div className="mb-5 p-3 rounded-2xl border border-gray-800 bg-gray-900">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Cargar evento</p>
+                <div className="flex flex-col gap-2">
+                  <select
+                    value={newEventPlayer}
+                    onChange={e => setNewEventPlayer(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                  >
+                    <option value="">Elegí un jugador...</option>
+                    {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <div className="flex gap-2 flex-wrap">
+                    {(Object.keys(EVENT_META) as FixtureEventType[]).map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setNewEventType(t)}
+                        className="px-3 py-2 rounded-xl text-xs font-bold border transition-colors"
+                        style={newEventType === t
+                          ? { background: EVENT_META[t].color + '25', borderColor: EVENT_META[t].color, color: EVENT_META[t].color }
+                          : { background: 'transparent', borderColor: '#374151', color: '#6b7280' }
+                        }
+                      >
+                        {EVENT_META[t].emoji} {EVENT_META[t].label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={addEvent}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold mt-1"
+                    style={{ background: teamColor, color: '#030712' }}
+                  >
+                    <Plus size={14} /> Agregar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {(Object.keys(EVENT_META) as FixtureEventType[]).map(type => {
+              const typeEvents = events.filter(e => e.type === type)
+              if (typeEvents.length === 0) return null
+              const meta = EVENT_META[type]
+              return (
+                <div key={type} className="mb-4">
+                  <p className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
+                    {meta.emoji} {meta.label}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {typeEvents.map(e => {
+                      const player = players.find(p => p.id === e.player_id)
+                      return (
+                        <div key={e.id} className="flex items-center gap-3 bg-gray-900 rounded-xl p-3 border border-gray-800">
+                          <Avatar name={player?.name ?? '?'} size="sm" />
+                          <p className="flex-1 text-sm text-white">{player?.name ?? 'Jugador'}</p>
+                          {isCoordinador && (
+                            <button onClick={() => removeEvent(e.id)} className="text-gray-600 hover:text-red-400">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+
+            {events.length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-8">
+                {isCoordinador ? 'Todavía no cargaste goles, asistencias ni tarjetas.' : 'Sin eventos cargados para este partido.'}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Attendance tab */}
         {tab === 'attendance' && (
           <div>
-            {/* Armar equipo button — DT only */}
             {isDT && (
               <button
                 onClick={() => navigate(`/team/${slug}/matches/${matchId}/lineup`)}
@@ -313,7 +471,6 @@ export function MatchDetailPage() {
               </button>
             )}
 
-            {/* Summary chips */}
             <div className="grid grid-cols-4 gap-2 mb-4">
               {[
                 { label: 'Confirmados', value: attendanceSummary.confirmed, color: '#22c55e' },
@@ -329,22 +486,40 @@ export function MatchDetailPage() {
             </div>
 
             <div className="flex flex-col gap-2">
-              {[...attendance].sort((a, b) => ATTENDANCE_ORDER[a.status] - ATTENDANCE_ORDER[b.status]).map(a => (
+              {[...attendanceList].sort((a, b) => ATTENDANCE_ORDER[a.status] - ATTENDANCE_ORDER[b.status]).map(a => (
                 <div
-                  key={a.id}
+                  key={a.player.id}
                   className="flex items-center gap-3 bg-gray-900 rounded-xl p-3 border transition-all"
-                  style={{ borderColor: a.player_id === CURRENT_PLAYER_ID ? teamColor + '60' : '#1f2937' }}
+                  style={{ borderColor: a.player.id === myPlayer?.id ? teamColor + '60' : '#1f2937' }}
                 >
-                  <Avatar name={a.player?.name ?? ''} size="sm" />
+                  <Avatar name={a.player.name} size="sm" />
                   <p className="flex-1 text-sm text-white">
-                    {a.player?.name}
-                    {a.player_id === CURRENT_PLAYER_ID && <span className="text-gray-500"> (vos)</span>}
+                    {a.player.name}
+                    {a.player.id === myPlayer?.id && <span className="text-gray-500"> (vos)</span>}
                   </p>
-                  <span className="text-lg">
-                    {a.status === 'confirmed' ? '✅' : a.status === 'absent' ? '❌' : a.status === 'maybe' ? '🤔' : '⬜'}
-                  </span>
+                  {isCoordinador ? (
+                    <div className="flex gap-1">
+                      {ATTENDANCE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => markAttendance(a.player.id, opt.value)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs"
+                          style={{ background: a.status === opt.value ? opt.color + '30' : 'transparent', border: `1px solid ${a.status === opt.value ? opt.color : '#374151'}` }}
+                        >
+                          {opt.label.split(' ')[0]}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-lg">
+                      {a.status === 'confirmed' ? '✅' : a.status === 'absent' ? '❌' : a.status === 'maybe' ? '🤔' : '⬜'}
+                    </span>
+                  )}
                 </div>
               ))}
+              {players.length === 0 && (
+                <p className="text-gray-500 text-sm text-center py-8">No hay jugadores cargados en esta categoría.</p>
+              )}
             </div>
           </div>
         )}
@@ -352,33 +527,37 @@ export function MatchDetailPage() {
         {/* MVP vote tab */}
         {tab === 'mvp' && (
           <div>
-            {/* Coordinador: open/close voting control */}
             {isCoordinador && (
               <button
                 onClick={toggleVotingClosed}
                 className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl font-bold text-sm mb-4 transition-opacity active:opacity-80"
-                style={votingClosed
+                style={votingClosedFinal
                   ? { background: '#1f2937', color: '#e5e7eb', border: '1px solid #374151' }
                   : { background: teamColor, color: '#030712' }
                 }
               >
-                {votingClosed ? <Unlock size={16} /> : <Lock size={16} />}
-                {votingClosed ? 'Reabrir votación' : 'Cerrar votación'}
+                {votingClosedFinal ? <Unlock size={16} /> : <Lock size={16} />}
+                {votingClosedFinal ? 'Reabrir votación' : 'Cerrar votación'}
               </button>
             )}
 
-            {votingClosed && (
+            {votingClosedFinal && (
               <div className="mb-4 px-3 py-2 rounded-xl bg-gray-800/50 border border-gray-700 text-center">
                 <p className="text-gray-300 text-xs font-semibold">🔒 La votación está cerrada</p>
               </div>
             )}
 
-            {/* My vote status */}
+            {!myPlayer && (
+              <div className="mb-4 px-3 py-2 rounded-xl bg-gray-800/50 border border-gray-700 text-center">
+                <p className="text-gray-400 text-xs">No tenés un jugador vinculado a tu cuenta en esta categoría, así que no podés votar — pero podés ver los resultados.</p>
+              </div>
+            )}
+
             <div className="text-center mb-4 p-4 rounded-2xl" style={{ background: teamColor + '18' }}>
               <Star size={28} style={{ color: teamColor }} className="mx-auto mb-2" />
               {myVote ? (
                 <>
-                  <p className="text-white font-bold text-sm">Votaste a {mockPlayers.find(p => p.id === myVote)?.name}</p>
+                  <p className="text-white font-bold text-sm">Votaste a {players.find(p => p.id === myVote)?.name}</p>
                   {canVote && <p className="text-gray-400 text-xs mt-1">Podés cambiar tu voto tocando otro jugador abajo</p>}
                 </>
               ) : (
@@ -388,16 +567,15 @@ export function MatchDetailPage() {
               )}
             </div>
 
-            {/* Player picker */}
             <p className="text-gray-400 text-sm mb-2 font-medium">Elegí al mejor jugador del partido:</p>
             <div className="flex flex-col gap-2 mb-5">
-              {mockPlayers.map(player => {
+              {players.map(player => {
                 const isMyPick = myVote === player.id
                 return (
                   <button
                     key={player.id}
                     onClick={() => castVote(player.id)}
-                    disabled={!canVote}
+                    disabled={!canVote || !myPlayer}
                     className="flex items-center gap-3 rounded-xl p-3 border w-full text-left active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"
                     style={isMyPick
                       ? { background: teamColor + '20', borderColor: teamColor }
@@ -419,12 +597,11 @@ export function MatchDetailPage() {
               })}
             </div>
 
-            {/* Live tally */}
-            <p className="text-gray-400 text-sm mb-2 font-medium">Resultado {votingClosed ? 'final' : 'parcial'}:</p>
+            <p className="text-gray-400 text-sm mb-2 font-medium">Resultado {votingClosedFinal ? 'final' : 'parcial'}:</p>
             <div className="flex flex-col gap-2 mb-5">
-              {mvpVotes.filter(v => v.votes > 0).length === 0 ? (
+              {mvpTally.filter(v => v.votes > 0).length === 0 ? (
                 <p className="text-gray-600 text-sm text-center py-4">Todavía no hay votos</p>
-              ) : mvpVotes.filter(v => v.votes > 0).map(({ player, votes }, i) => (
+              ) : mvpTally.filter(v => v.votes > 0).map(({ player, votes }, i) => (
                 <div key={player.id} className="flex items-center gap-3 bg-gray-900 rounded-xl p-3 border border-gray-800">
                   <span className="text-gray-600 font-mono text-sm w-5">{i + 1}</span>
                   <Avatar name={player.name} size="sm" />
@@ -437,7 +614,6 @@ export function MatchDetailPage() {
               ))}
             </div>
 
-            {/* Who voted for whom — transparency */}
             <p className="text-gray-400 text-sm mb-2 font-medium">Quién votó a quién:</p>
             <div className="flex flex-col gap-2">
               {voterEntries.length === 0 ? (
@@ -456,27 +632,23 @@ export function MatchDetailPage() {
             </div>
           </div>
         )}
-
-        {/* Summary tab */}
-        {tab === 'summary' && (
-          <div>
-            {match.summary ? (
-              <Card>
-                <p className="text-gray-300 text-sm leading-relaxed">{match.summary}</p>
-              </Card>
-            ) : (
-              <p className="text-gray-500 text-sm text-center py-8">No hay resumen cargado para este partido.</p>
-            )}
-          </div>
-        )}
       </div>
 
       {showEdit && (
         <EditMatchSheet
-          match={match}
+          rival={display.rival}
+          date={display.date}
+          location={display.location ?? ''}
           teamColor={teamColor}
           onClose={() => setShowEdit(false)}
-          onSave={patch => setMatchOverride(match.id, patch)}
+          onSave={patch => {
+            const isWeAreHome = display.weWereHome
+            updateFixtureMatch(fixtureMatch.id, {
+              ...(isWeAreHome ? { away_team: patch.rival } : { home_team: patch.rival }),
+              date: patch.date,
+              location: patch.location,
+            })
+          }}
         />
       )}
     </div>

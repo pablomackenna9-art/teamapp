@@ -6,8 +6,9 @@ import { useDemoStore } from '@/store/demoStore'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { isMockId } from '@/lib/storage'
 import { calculateStandings } from '@/lib/standings'
+import { ourMatches, lastPlayedFor, nextUpcomingFor, ourScore, theirScore, type DisplayMatch } from '@/lib/matches'
 import { mockTeam, mockStats } from '@/lib/mock'
-import type { Category, FixtureMatch, ComputedStanding, Title, Post } from '@/types'
+import type { Category, ComputedStanding, Title, Post } from '@/types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { SponsorBanner } from '@/components/SponsorBanner'
@@ -17,54 +18,6 @@ function formatMatchDate(date: string) {
 }
 function formatDateShort(date: string) {
   return format(new Date(date), "dd MMM", { locale: es })
-}
-
-// A club's own match, derived from the real fixture (round-robin schedule),
-// resolved to "us vs rival" from our team's point of view.
-interface DisplayMatch {
-  id: string
-  category_id: string
-  rival: string
-  date: string
-  played: boolean
-  home_score: number | null
-  away_score: number | null
-  weWereHome: boolean
-}
-
-function ourMatches(fixtureMatches: FixtureMatch[], teamName: string): DisplayMatch[] {
-  // The demo's seed fixture uses the short literal 'Maestros' regardless of
-  // whatever display name the demo team currently has — match both.
-  const isUs = (t: string) => t === teamName || t === 'Maestros'
-  return fixtureMatches
-    .filter(m => isUs(m.home_team) || isUs(m.away_team))
-    .map(m => ({
-      id: m.id,
-      category_id: m.category_id,
-      rival: isUs(m.home_team) ? m.away_team : m.home_team,
-      date: m.date,
-      played: m.played && m.home_score !== null && m.away_score !== null,
-      home_score: m.home_score,
-      away_score: m.away_score,
-      weWereHome: isUs(m.home_team),
-    }))
-}
-
-function lastPlayedFor(matches: DisplayMatch[], categoryId: string) {
-  return matches
-    .filter(m => m.category_id === categoryId && m.played)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-}
-function nextUpcomingFor(matches: DisplayMatch[], categoryId: string) {
-  return matches
-    .filter(m => m.category_id === categoryId && !m.played)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
-}
-function ourScore(m: DisplayMatch) {
-  return m.weWereHome ? m.home_score : m.away_score
-}
-function theirScore(m: DisplayMatch) {
-  return m.weWereHome ? m.away_score : m.home_score
 }
 
 // ─── Post type colors & labels ────────────────────────────────────────────────
@@ -460,15 +413,18 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
             teamColor={teamColor}
           >
             <div className="grid grid-cols-2 gap-3">
-              {categories.map(cat => (
-                <CategoryMatchGridCard
-                  key={cat.id}
-                  category={cat}
-                  match={lastPlayedFor(matches, cat.id)}
-                  kind="last"
-                  onClick={() => navigate(`/team/${slug}/fixture`)}
-                />
-              ))}
+              {categories.map(cat => {
+                const m = lastPlayedFor(matches, cat.id)
+                return (
+                  <CategoryMatchGridCard
+                    key={cat.id}
+                    category={cat}
+                    match={m}
+                    kind="last"
+                    onClick={() => m && navigate(`/team/${slug}/matches/${m.id}`)}
+                  />
+                )
+              })}
             </div>
           </Section>
 
@@ -480,15 +436,18 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
             teamColor={teamColor}
           >
             <div className="grid grid-cols-2 gap-3">
-              {categories.map(cat => (
-                <CategoryMatchGridCard
-                  key={cat.id}
-                  category={cat}
-                  match={nextUpcomingFor(matches, cat.id)}
-                  kind="next"
-                  onClick={() => navigate(`/team/${slug}/fixture`)}
-                />
-              ))}
+              {categories.map(cat => {
+                const m = nextUpcomingFor(matches, cat.id)
+                return (
+                  <CategoryMatchGridCard
+                    key={cat.id}
+                    category={cat}
+                    match={m}
+                    kind="next"
+                    onClick={() => m && navigate(`/team/${slug}/matches/${m.id}`)}
+                  />
+                )
+              })}
             </div>
           </Section>
 
@@ -632,7 +591,7 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo }
           ) : null}
         </div>
         <button
-          onClick={() => match && navigate(`/team/${slug}/fixture`)}
+          onClick={() => match && navigate(`/team/${slug}/matches/${match.id}`)}
           disabled={!match}
           className="w-full py-2 rounded-xl text-xs font-semibold"
           style={isLast
@@ -640,7 +599,7 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo }
             : { background: 'var(--team-color-dim)', color: 'var(--team-color)' }
           }
         >
-          {isLast ? 'Ver detalle' : 'Ver fixture'}
+          {isLast ? 'Ver detalle' : 'Ver detalle y confirmar'}
         </button>
       </div>
     )
@@ -732,7 +691,7 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo }
                   <span style={{ color: '#e5e7eb' }}>{m.rival}</span>
                 </div>
                 <button
-                  onClick={() => navigate(`/team/${slug}/fixture`)}
+                  onClick={() => navigate(`/team/${slug}/matches/${m.id}`)}
                   className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800"
                 >
                   Detalle

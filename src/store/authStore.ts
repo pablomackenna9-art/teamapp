@@ -59,6 +59,7 @@ interface TeamState {
   setMatchResult: (matchId: string, homeScore: number, awayScore: number) => void
   setPointsPerWin: (categoryId: string, pts: 2 | 3) => void
   addFixtureMatches: (matches: FixtureMatch[]) => void
+  updateFixtureMatch: (matchId: string, patch: Partial<Pick<FixtureMatch, 'home_team' | 'away_team' | 'date' | 'location' | 'formation' | 'lineup'>>) => void
   addTitle: (categoryId: string, tournament: string, year: number) => Promise<void>
   removeTitle: (id: string) => Promise<void>
   setDemoPreviewRole: (role: UserRole, platformAdminPreview?: boolean) => void
@@ -150,6 +151,18 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         away_score: m.away_score,
         played: m.played,
       }))).then()
+    }
+  },
+  updateFixtureMatch: (matchId, patch) => {
+    set(state => ({
+      fixtureMatches: state.fixtureMatches.map(m => m.id === matchId ? { ...m, ...patch } : m),
+    }))
+    if (isMockTeamId(get().currentTeamId)) {
+      useDemoStore.setState(state => ({
+        fixtureMatches: state.fixtureMatches.map(m => m.id === matchId ? { ...m, ...patch } : m),
+      }))
+    } else {
+      supabase.from('fixture_matches').update(patch).eq('id', matchId).then()
     }
   },
   addTitle: async (categoryId, tournament, year) => {
