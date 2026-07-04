@@ -1,0 +1,55 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+
+@theme {
+  --color-gray-950: #030712;
+  --color-neon-green: #22c55e;
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+}
+
+:root {
+  --team-color: #22c55e;
+  --team-color-dim: rgba(34, 197, 94, 0.15);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #030712;
+  color: #f9fafb;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.team-accent {
+  color: var(--team-color);
+}
+
+.team-accent-bg {
+  background-color: var(--team-color);
+}
+
+.team-accent-border {
+  border-color: var(--team-color);
+}
+
+.team-accent-dim {
+  background-color: var(--team-color-dim);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
