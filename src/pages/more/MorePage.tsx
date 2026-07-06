@@ -264,12 +264,15 @@ function SponsorsManager({ teamColor, teamName, teamId, isDemo }: {
         <p className="text-gray-500 text-xs mb-3">
           Elegí qué auspiciador se muestra en <span className="text-gray-300">todas las secciones y categorías</span> de este club. Se mantiene fijo hasta que lo cambies.
         </p>
+        <p className="text-gray-600 text-[11px] mb-3">
+          Medida recomendada: 1200×300px (banner horizontal), logo centrado — así se ve completo y sin recortes.
+        </p>
 
         {activeSponsorFromStore && (
           <div className="mb-3">
             <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Activo actualmente</p>
-            <div className="rounded-xl overflow-hidden border-2" style={{ borderColor: teamColor, height: 70 }}>
-              <img src={activeSponsorFromStore} alt="Auspiciador activo" className="w-full h-full object-cover" />
+            <div className="rounded-xl overflow-hidden border-2 bg-black flex items-center justify-center" style={{ borderColor: teamColor, height: 90 }}>
+              <img src={activeSponsorFromStore} alt="Auspiciador activo" className="w-full h-full object-contain" />
             </div>
           </div>
         )}

@@ -23,10 +23,12 @@ export function RootLayout() {
       if (session) supabase.rpc('claim_invites').then()
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
-      if (!session) navigate('/login')
-      else supabase.rpc('claim_invites').then()
+      // Only redirect on an actual sign-out — other null-session events (e.g.
+      // the initial session check) shouldn't boot someone out of a demo page.
+      if (event === 'SIGNED_OUT') navigate('/login')
+      else if (session) supabase.rpc('claim_invites').then()
     })
 
     return () => subscription.unsubscribe()

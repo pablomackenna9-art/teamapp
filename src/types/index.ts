@@ -18,6 +18,7 @@ export interface Team {
   name: string
   slug: string
   logo_url: string | null
+  sponsor_url?: string | null
   primary_color: string
   secondary_color: string
   sport: Sport

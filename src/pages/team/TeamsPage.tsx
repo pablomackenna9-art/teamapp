@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Shield, Crown, Trash2, X, AlertTriangle } from 'lucide-react'
+import { Plus, Shield, Crown, Trash2, X, AlertTriangle, Megaphone, ImagePlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore, useTeamStore } from '@/store/authStore'
@@ -8,9 +8,93 @@ import { useDemoStore } from '@/store/demoStore'
 import { Card } from '@/components/Card'
 import { Button } from '@/components/Button'
 import { EmptyState } from '@/components/EmptyState'
+import { uploadTeamPhoto } from '@/lib/storage'
 import type { Team } from '@/types'
 import { mockTeam } from '@/lib/mock'
 import { initials } from '@/lib/utils'
+
+// ── Super admin: change/remove a specific club's sponsor without entering it ──
+function TeamSponsorSheet({ team, onClose, onUpdated }: {
+  team: Team
+  onClose: () => void
+  onUpdated: (sponsorUrl: string | null) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function handleUpload(file: File) {
+    if (!file.type.startsWith('image/')) { toast.error('Seleccioná una imagen'); return }
+    setUploading(true)
+    try {
+      const url = await uploadTeamPhoto(file, `${team.id}/sponsor`)
+      const { error } = await supabase.from('teams').update({ sponsor_url: url }).eq('id', team.id)
+      if (error) throw error
+      onUpdated(url)
+      toast.success('Auspiciador actualizado')
+    } catch (err: any) {
+      toast.error(err.message ?? 'No se pudo subir el auspiciador')
+    }
+    setUploading(false)
+  }
+
+  async function handleRemove() {
+    const { error } = await supabase.from('teams').update({ sponsor_url: null }).eq('id', team.id)
+    if (error) { toast.error(error.message); return }
+    onUpdated(null)
+    toast.success('Auspiciador quitado')
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-lg bg-gray-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-700 p-6 pb-10 sm:pb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-white font-bold text-lg">Auspiciador de {team.name}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
+        </div>
+        <p className="text-gray-500 text-sm mb-5">Se muestra en todas las secciones y categorías de este club.</p>
+
+        {team.sponsor_url && (
+          <div className="mb-4">
+            <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Activo actualmente</p>
+            <div className="rounded-xl overflow-hidden border-2 border-gray-700 bg-black flex items-center justify-center" style={{ height: 100 }}>
+              <img src={team.sponsor_url} alt="Auspiciador" className="w-full h-full object-contain" />
+            </div>
+            <button
+              onClick={handleRemove}
+              className="w-full mt-2 py-2 rounded-xl text-xs font-semibold text-gray-500 border border-gray-800"
+            >
+              Quitar auspiciador
+            </button>
+          </div>
+        )}
+
+        <p className="text-gray-600 text-xs mb-3">
+          Medida recomendada: 1200×300px (banner horizontal), fondo transparente o negro y el logo centrado.
+        </p>
+
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold"
+          style={{ background: '#22c55e20', color: '#22c55e' }}
+        >
+          {uploading ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <ImagePlus size={16} />}
+          {uploading ? 'Subiendo...' : (team.sponsor_url ? 'Cambiar imagen' : 'Subir imagen')}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }}
+        />
+      </div>
+    </div>
+  )
+}
 
 export function TeamsPage() {
   const navigate = useNavigate()
@@ -23,6 +107,7 @@ export function TeamsPage() {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [sponsorTeam, setSponsorTeam] = useState<Team | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -142,13 +227,22 @@ export function TeamsPage() {
                 <p className="text-gray-500 text-sm truncate">/{team.slug}</p>
               </div>
               {showPlatformAdminUI && (
-                <button
-                  onClick={e => { e.stopPropagation(); setTeamToDelete(team) }}
-                  className="ml-auto p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 shrink-0"
-                  aria-label="Eliminar equipo"
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="ml-auto flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={e => { e.stopPropagation(); setSponsorTeam(team) }}
+                    className="p-2 rounded-lg text-gray-600 hover:text-amber-400 hover:bg-amber-500/10"
+                    aria-label="Auspiciador"
+                  >
+                    <Megaphone size={16} />
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); setTeamToDelete(team) }}
+                    className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10"
+                    aria-label="Eliminar equipo"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               )}
               {!showPlatformAdminUI && <div className="ml-auto text-gray-600">›</div>}
             </Card>
@@ -204,6 +298,17 @@ export function TeamsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {sponsorTeam && (
+        <TeamSponsorSheet
+          team={sponsorTeam}
+          onClose={() => setSponsorTeam(null)}
+          onUpdated={sponsorUrl => {
+            setTeams(prev => prev.map(t => t.id === sponsorTeam.id ? { ...t, sponsor_url: sponsorUrl } : t))
+            setSponsorTeam(prev => prev ? { ...prev, sponsor_url: sponsorUrl } : prev)
+          }}
+        />
       )}
     </div>
   )
