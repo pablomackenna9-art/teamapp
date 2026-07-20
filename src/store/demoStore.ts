@@ -207,6 +207,13 @@ export const useDemoStore = create<DemoState>()(
 
       resetDemo: () => set(seed),
     }),
-    { name: 'teamapp-demo-data' }
+    {
+      name: 'teamapp-demo-data',
+      // Bump this whenever the seed content changes (new demo photos, sponsor,
+      // etc.) so every browser picks up the fresh baseline instead of staying
+      // stuck on whatever it happened to persist locally before.
+      version: 2,
+      migrate: () => seed,
+    }
   )
 )
