@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Shield, Crown, Trash2, X, AlertTriangle, Megaphone, ImagePlus } from 'lucide-react'
+import { Plus, Shield, Crown, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore, useTeamStore } from '@/store/authStore'
@@ -96,6 +96,146 @@ function TeamSponsorSheet({ team, onClose, onUpdated }: {
   )
 }
 
+// ── Super admin: apply one sponsor image to several clubs at once ─────────────
+function BulkSponsorSheet({ teams, onClose, onUpdated }: {
+  teams: Team[]
+  onClose: () => void
+  onUpdated: (teamIds: string[], sponsorUrl: string) => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [applying, setApplying] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  function toggleTeam(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected(prev => prev.size === teams.length ? new Set() : new Set(teams.map(t => t.id)))
+  }
+
+  async function handleApply() {
+    if (!file) { toast.error('Elegí una imagen'); return }
+    if (selected.size === 0) { toast.error('Elegí al menos un equipo'); return }
+    setApplying(true)
+    try {
+      // Upload once, reuse the same URL for every selected club
+      const url = await uploadTeamPhoto(file, `bulk-sponsors/${Date.now()}`)
+      const ids = Array.from(selected)
+      const { error } = await supabase.from('teams').update({ sponsor_url: url }).in('id', ids)
+      if (error) throw error
+      onUpdated(ids, url)
+      toast.success(`Auspiciador aplicado a ${ids.length} club${ids.length !== 1 ? 'es' : ''}`)
+      onClose()
+    } catch (err: any) {
+      toast.error(err.message ?? 'No se pudo aplicar el auspiciador')
+    }
+    setApplying(false)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-lg bg-gray-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-700 p-6 pb-8 sm:pb-6 max-h-[88dvh] sm:max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <h2 className="text-white font-bold text-lg">Auspiciador masivo</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
+        </div>
+        <p className="text-gray-500 text-sm mb-4 shrink-0">Subí una imagen y aplicala a varios clubes a la vez.</p>
+
+        <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4">
+          {preview ? (
+            <div className="relative rounded-2xl overflow-hidden border-2 border-gray-700 bg-black flex items-center justify-center shrink-0" style={{ height: 100 }}>
+              <img src={preview} alt="Auspiciador" className="w-full h-full object-contain" />
+              <button
+                onClick={() => { setFile(null); setPreview(null) }}
+                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 flex items-center justify-center text-white"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-2 py-6 rounded-2xl border border-dashed border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 shrink-0"
+            >
+              <ImagePlus size={22} />
+              <span className="text-xs font-semibold">Elegí una imagen</span>
+              <span className="text-[11px] text-gray-600">Recomendado: 1200×300px</span>
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0]
+              if (!f) return
+              setFile(f)
+              setPreview(URL.createObjectURL(f))
+            }}
+          />
+
+          <div className="shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Elegí los clubes</p>
+              <button onClick={toggleAll} className="text-xs font-semibold" style={{ color: '#22c55e' }}>
+                {selected.size === teams.length ? 'Ninguno' : 'Todos'}
+              </button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {teams.map(team => {
+                const isSelected = selected.has(team.id)
+                return (
+                  <button
+                    key={team.id}
+                    onClick={() => toggleTeam(team.id)}
+                    className="flex items-center gap-3 p-2.5 rounded-xl border text-left transition-all"
+                    style={isSelected
+                      ? { background: '#22c55e20', borderColor: '#22c55e' }
+                      : { background: '#111827', borderColor: '#1f2937' }
+                    }
+                  >
+                    <div
+                      className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border-2"
+                      style={isSelected ? { background: '#22c55e', borderColor: '#22c55e' } : { borderColor: '#374151' }}
+                    >
+                      {isSelected && <Check size={13} color="#030712" />}
+                    </div>
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden"
+                      style={{ background: team.primary_color + '26', color: team.primary_color }}
+                    >
+                      {team.logo_url ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" /> : team.name[0]}
+                    </div>
+                    <span className="text-sm font-semibold text-white truncate">{team.name}</span>
+                  </button>
+                )
+              })}
+              {teams.length === 0 && (
+                <p className="text-gray-600 text-sm text-center py-4">No hay clubes reales todavía.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <Button fullWidth loading={applying} onClick={handleApply} className="mt-4 shrink-0">
+          Aplicar a {selected.size} club{selected.size !== 1 ? 'es' : ''}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function TeamsPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -108,6 +248,7 @@ export function TeamsPage() {
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [sponsorTeam, setSponsorTeam] = useState<Team | null>(null)
+  const [showBulkSponsor, setShowBulkSponsor] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -178,10 +319,17 @@ export function TeamsPage() {
       </div>
 
       {showPlatformAdminUI && (
-        <div className="mb-6 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30">
+        <div className="mb-6 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3">
           <p className="text-amber-400 text-xs font-semibold">
             👑 Sos administrador de la plataforma — ves y podés gestionar todos los clubes
           </p>
+          <button
+            onClick={() => setShowBulkSponsor(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0"
+            style={{ background: '#f59e0b20', color: '#f59e0b' }}
+          >
+            <Megaphone size={13} /> Auspiciadores
+          </button>
         </div>
       )}
 
@@ -307,6 +455,16 @@ export function TeamsPage() {
           onUpdated={sponsorUrl => {
             setTeams(prev => prev.map(t => t.id === sponsorTeam.id ? { ...t, sponsor_url: sponsorUrl } : t))
             setSponsorTeam(prev => prev ? { ...prev, sponsor_url: sponsorUrl } : prev)
+          }}
+        />
+      )}
+
+      {showBulkSponsor && (
+        <BulkSponsorSheet
+          teams={teams}
+          onClose={() => setShowBulkSponsor(false)}
+          onUpdated={(teamIds, sponsorUrl) => {
+            setTeams(prev => prev.map(t => teamIds.includes(t.id) ? { ...t, sponsor_url: sponsorUrl } : t))
           }}
         />
       )}
