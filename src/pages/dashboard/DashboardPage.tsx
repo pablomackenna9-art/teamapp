@@ -209,16 +209,14 @@ function CategoryMatchGridCard({ category, match, kind, onClick }: {
         background: isLast ? resultColor + '0d' : '#0a162855',
       }}
     >
-      {/* Category badge */}
-      <span
-        className="absolute top-2 left-2 z-10 text-[9px] font-black px-2 py-0.5 rounded-full tracking-wide"
-        style={{ background: '#00000070', color: '#e5e7eb' }}
-      >
-        {category.name.toUpperCase()}
-      </span>
-
-      {/* Header bar */}
-      <div className="py-2 text-center" style={{ background: headerBg }}>
+      {/* Header bar — category name + last/next label, stacked so long category names never overlap */}
+      <div className="py-2 px-2 text-center flex flex-col items-center gap-1" style={{ background: headerBg }}>
+        <span
+          className="text-[9px] font-black px-2 py-0.5 rounded-full tracking-wide max-w-full truncate"
+          style={{ background: '#00000070', color: '#e5e7eb' }}
+        >
+          {category.name.toUpperCase()}
+        </span>
         <span className="text-[10px] font-black tracking-widest" style={{ color: isLast ? resultColor : '#93c5fd' }}>
           {isLast ? 'ÚLTIMO PARTIDO' : 'PRÓXIMO PARTIDO'}
         </span>
