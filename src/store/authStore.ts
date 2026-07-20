@@ -150,6 +150,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         home_score: m.home_score,
         away_score: m.away_score,
         played: m.played,
+        location: m.location ?? null,
       }))).then()
     }
   },

@@ -4,7 +4,7 @@ import { mockCategories } from '@/lib/mock'
 import { useTeamStore } from '@/store/authStore'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { X, Check, Plus, FileSpreadsheet, Trash2 } from 'lucide-react'
+import { X, Check, Plus, FileSpreadsheet, Trash2, Clock, MapPin } from 'lucide-react'
 import { FixtureExcelImport } from '@/components/FixtureExcelImport'
 import { SponsorBanner } from '@/components/SponsorBanner'
 import type { FixtureMatch } from '@/types'
@@ -12,6 +12,9 @@ import toast from 'react-hot-toast'
 
 function formatDate(d: string) {
   return format(new Date(d), "EEE dd MMM", { locale: es })
+}
+function formatTime(d: string) {
+  return format(new Date(d), "HH:mm")
 }
 
 interface ResultModalProps {
@@ -90,7 +93,7 @@ function ResultModal({ match, teamColor, onSave, onClose }: ResultModalProps) {
   )
 }
 
-interface DraftMatch { homeTeam: string; awayTeam: string; date: string }
+interface DraftMatch { homeTeam: string; awayTeam: string; date: string; time: string; location: string }
 
 function AddRoundSheet({ round, teamColor, onClose, onSave }: {
   round: number
@@ -99,14 +102,17 @@ function AddRoundSheet({ round, teamColor, onClose, onSave }: {
   onSave: (matches: DraftMatch[]) => void
 }) {
   const today = new Date().toISOString().slice(0, 10)
-  const [drafts, setDrafts] = useState<DraftMatch[]>([{ homeTeam: '', awayTeam: '', date: today }])
+  const [drafts, setDrafts] = useState<DraftMatch[]>([{ homeTeam: '', awayTeam: '', date: today, time: '10:00', location: '' }])
 
   function updateDraft(i: number, patch: Partial<DraftMatch>) {
     setDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, ...patch } : d))
   }
 
   function addRow() {
-    setDrafts(prev => [...prev, { homeTeam: '', awayTeam: '', date: prev[prev.length - 1]?.date ?? today }])
+    setDrafts(prev => {
+      const last = prev[prev.length - 1]
+      return [...prev, { homeTeam: '', awayTeam: '', date: last?.date ?? today, time: last?.time ?? '10:00', location: last?.location ?? '' }]
+    })
   }
 
   function removeRow(i: number) {
@@ -170,12 +176,24 @@ function AddRoundSheet({ round, teamColor, onClose, onSave }: {
                   onChange={e => updateDraft(i, { date: e.target.value })}
                   className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm outline-none"
                 />
+                <input
+                  type="time"
+                  value={d.time}
+                  onChange={e => updateDraft(i, { time: e.target.value })}
+                  className="w-24 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm outline-none shrink-0"
+                />
                 {drafts.length > 1 && (
                   <button onClick={() => removeRow(i)} className="text-red-400 hover:text-red-300 shrink-0 p-1.5">
                     <Trash2 size={15} />
                   </button>
                 )}
               </div>
+              <input
+                value={d.location}
+                onChange={e => updateDraft(i, { location: e.target.value })}
+                placeholder="Cancha (ej: Cancha Municipal)"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white placeholder-gray-600 text-sm outline-none"
+              />
             </div>
           ))}
 
@@ -229,10 +247,11 @@ export function FixturePage() {
       round: nextRound,
       home_team: d.homeTeam.trim(),
       away_team: d.awayTeam.trim(),
-      date: new Date(d.date).toISOString(),
+      date: new Date(`${d.date}T${d.time || '10:00'}`).toISOString(),
       home_score: null,
       away_score: null,
       played: false,
+      location: d.location.trim() || null,
     }))
     addFixtureMatches(newMatches)
     toast.success(`Jornada ${nextRound} agregada con ${newMatches.length} partido${newMatches.length !== 1 ? 's' : ''}`)
@@ -319,60 +338,76 @@ export function FixturePage() {
                     key={match.id}
                     onClick={() => isAdmin && setEditingMatch(match)}
                     disabled={!isAdmin}
-                    className="flex items-center gap-2 p-3.5 rounded-2xl border text-left transition-all active:scale-98"
+                    className="flex flex-col gap-2 p-3.5 rounded-2xl border text-left transition-all active:scale-98"
                     style={{
                       background: '#0d1117',
                       borderColor: rc ? rc + '40' : '#1f2937',
                     }}
                   >
-                    {/* Home team */}
-                    <div className="flex-1 text-right min-w-0">
-                      <p
-                        className="text-sm font-semibold truncate"
-                        style={{ color: match.home_team === 'Maestros' || match.home_team === teamName ? teamColor : '#f9fafb' }}
-                      >
-                        {match.home_team}
-                      </p>
-                    </div>
+                    <div className="flex items-center gap-2">
+                      {/* Home team */}
+                      <div className="flex-1 text-right min-w-0">
+                        <p
+                          className="text-sm font-semibold truncate"
+                          style={{ color: match.home_team === 'Maestros' || match.home_team === teamName ? teamColor : '#f9fafb' }}
+                        >
+                          {match.home_team}
+                        </p>
+                      </div>
 
-                    {/* Score */}
-                    <div
-                      className="shrink-0 px-3 py-1.5 rounded-xl min-w-[70px] text-center"
-                      style={{
-                        background: played ? (rc ? rc + '20' : '#1f2937') : '#1f2937',
-                        border: `1px solid ${played ? (rc ? rc + '50' : '#374151') : '#374151'}`,
-                      }}
-                    >
-                      {played ? (
-                        <span className="text-base font-black text-white">
-                          {match.home_score} - {match.away_score}
+                      {/* Score */}
+                      <div
+                        className="shrink-0 px-3 py-1.5 rounded-xl min-w-[70px] text-center"
+                        style={{
+                          background: played ? (rc ? rc + '20' : '#1f2937') : '#1f2937',
+                          border: `1px solid ${played ? (rc ? rc + '50' : '#374151') : '#374151'}`,
+                        }}
+                      >
+                        {played ? (
+                          <span className="text-base font-black text-white">
+                            {match.home_score} - {match.away_score}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-gray-600">vs</span>
+                        )}
+                      </div>
+
+                      {/* Away team */}
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-sm font-semibold truncate"
+                          style={{ color: match.away_team === 'Maestros' || match.away_team === teamName ? teamColor : '#f9fafb' }}
+                        >
+                          {match.away_team}
+                        </p>
+                      </div>
+
+                      {/* Admin edit hint */}
+                      {isAdmin && (
+                        <span
+                          className="text-[9px] font-bold shrink-0 px-2 py-1 rounded-lg"
+                          style={played
+                            ? { background: '#37415150', color: '#9ca3af' }
+                            : { background: teamColor + '20', color: teamColor }
+                          }
+                        >
+                          {played ? 'Editar' : 'Cargar'}
                         </span>
-                      ) : (
-                        <span className="text-xs font-bold text-gray-600">vs</span>
                       )}
                     </div>
 
-                    {/* Away team */}
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className="text-sm font-semibold truncate"
-                        style={{ color: match.away_team === 'Maestros' || match.away_team === teamName ? teamColor : '#f9fafb' }}
-                      >
-                        {match.away_team}
-                      </p>
-                    </div>
-
-                    {/* Admin edit hint */}
-                    {isAdmin && (
-                      <span
-                        className="text-[9px] font-bold shrink-0 px-2 py-1 rounded-lg"
-                        style={played
-                          ? { background: '#37415150', color: '#9ca3af' }
-                          : { background: teamColor + '20', color: teamColor }
-                        }
-                      >
-                        {played ? 'Editar' : 'Cargar'}
-                      </span>
+                    {/* Time / cancha — prominent regardless of played state */}
+                    {(match.location || !played) && (
+                      <div className="flex items-center justify-center gap-3 text-[11px] text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <Clock size={11} /> {formatTime(match.date)}
+                        </span>
+                        {match.location && (
+                          <span className="flex items-center gap-1">
+                            <MapPin size={11} /> {match.location}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </button>
                 )

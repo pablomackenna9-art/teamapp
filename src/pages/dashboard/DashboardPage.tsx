@@ -8,7 +8,7 @@ import { isMockId } from '@/lib/storage'
 import { calculateStandings } from '@/lib/standings'
 import { ourMatches, lastPlayedFor, nextUpcomingFor, ourScore, theirScore, type DisplayMatch } from '@/lib/matches'
 import { mockTeam, mockStats } from '@/lib/mock'
-import type { Category, ComputedStanding, Title, Post } from '@/types'
+import type { Category, ComputedStanding, Title, Post, Photo } from '@/types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { SponsorBanner } from '@/components/SponsorBanner'
@@ -115,6 +115,40 @@ function NewsCarousel({ categoryId = null }: { teamColor: string; categoryId?: s
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Featured photos carousel ──────────────────────────────────────────────────
+function FeaturedPhotosCarousel({ teamColor }: { teamColor: string }) {
+  const { currentTeamId } = useTeamStore()
+  const isDemo = !isSupabaseConfigured || isMockId(currentTeamId)
+  const demoPhotos = useDemoStore(s => s.photos)
+  const [realPhotos, setRealPhotos] = useState<Photo[]>([])
+
+  useEffect(() => {
+    if (isDemo || !currentTeamId) return
+    supabase.from('photos').select('*').eq('team_id', currentTeamId).eq('featured', true)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setRealPhotos(data ?? []))
+  }, [isDemo, currentTeamId])
+
+  const photos = (isDemo ? demoPhotos.filter(p => p.featured) : realPhotos).slice(0, 8)
+  if (photos.length === 0) return null
+
+  return (
+    <div className="mx-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Star size={14} style={{ color: teamColor }} fill={teamColor} />
+        <span className="text-xs font-black tracking-wider text-white">FOTOS DESTACADAS</span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+        {photos.map(photo => (
+          <div key={photo.id} className="shrink-0 w-28 h-28 rounded-2xl overflow-hidden border border-gray-800">
+            <img src={photo.url} alt={photo.caption ?? ''} className="w-full h-full object-cover" loading="lazy" />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -394,6 +428,9 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
 
       {/* News carousel */}
       <NewsCarousel teamColor={teamColor} />
+
+      {/* Featured photos */}
+      <FeaturedPhotosCarousel teamColor={teamColor} />
 
       {categories.length === 0 ? (
         <div className="mx-4 rounded-2xl border border-dashed border-gray-800 py-10 text-center">

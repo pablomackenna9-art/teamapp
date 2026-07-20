@@ -112,12 +112,13 @@ function AddPlayerSheet({ teamColor, categories, onClose, onSave }: {
   teamColor: string
   categories: { id: string; name: string }[]
   onClose: () => void
-  onSave: (data: { name: string; position: string; number: string; category_id: string | null; email: string }) => Promise<void>
+  onSave: (data: { name: string; position: string; number: string; category_id: string | null; email: string; nickname: string }) => Promise<void>
 }) {
   const [name, setName] = useState('')
   const [position, setPosition] = useState('Delantero')
   const [number, setNumber] = useState('')
   const [email, setEmail] = useState('')
+  const [nickname, setNickname] = useState('')
   const [categoryId, setCategoryId] = useState<string | null>(categories[0]?.id ?? null)
   const [saving, setSaving] = useState(false)
 
@@ -125,7 +126,7 @@ function AddPlayerSheet({ teamColor, categories, onClose, onSave }: {
     if (!name.trim()) { toast.error('Ingresá el nombre del jugador'); return }
     setSaving(true)
     try {
-      await onSave({ name: name.trim(), position, number, category_id: categoryId, email: email.trim() })
+      await onSave({ name: name.trim(), position, number, category_id: categoryId, email: email.trim(), nickname: nickname.trim() })
       onClose()
     } finally {
       setSaving(false)
@@ -151,6 +152,16 @@ function AddPlayerSheet({ teamColor, categories, onClose, onSave }: {
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="Juan Pérez"
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm outline-none"
+            />
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Apodo (opcional)</p>
+            <input
+              value={nickname}
+              onChange={e => setNickname(e.target.value)}
+              placeholder="Ej: Pato"
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm outline-none"
             />
           </div>
@@ -270,7 +281,7 @@ export function SquadPage() {
     p.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  async function handleAddPlayer(data: { name: string; position: string; number: string; category_id: string | null; email: string }) {
+  async function handleAddPlayer(data: { name: string; position: string; number: string; category_id: string | null; email: string; nickname: string }) {
     if (isDemo) {
       addDemoPlayer({
         id: `demo-p-${Date.now()}`,
@@ -284,6 +295,7 @@ export function SquadPage() {
         is_active: true,
         created_at: new Date().toISOString(),
         email: data.email || null,
+        nickname: data.nickname || null,
       })
       toast.success('Jugador agregado')
       return
@@ -296,6 +308,7 @@ export function SquadPage() {
       category_id: data.category_id,
       is_active: true,
       email: data.email || null,
+      nickname: data.nickname || null,
     }).select().single()
     if (error) { toast.error(error.message); return }
     if (data.email && player) {
@@ -524,7 +537,10 @@ export function SquadPage() {
 
                 {/* Info */}
                 <div className="p-3">
-                  <p className="text-white font-semibold text-sm leading-tight truncate">{player.name}</p>
+                  <p className="text-white font-semibold text-sm leading-tight truncate">
+                    {player.name}
+                    {player.nickname && <span className="text-gray-500 font-normal"> "{player.nickname}"</span>}
+                  </p>
                   {player.responsibility && (
                     <span
                       className="inline-block mt-1 text-[9px] font-black px-1.5 py-0.5 rounded"

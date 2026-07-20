@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { mockCategories, mockFixture, mockPointsPerWin, mockPlayers, mockPosts, mockTeam, mockTitles } from '@/lib/mock'
-import type { Category, FixtureMatch, Player, PlayerResponsibility, Post, AttendanceStatus, FixtureEventType } from '@/types'
+import type { Category, FixtureMatch, Player, PlayerResponsibility, Post, AttendanceStatus, FixtureEventType, Photo } from '@/types'
 import type { MockTitle } from '@/lib/mock'
 import sponsorGatorade from '@/assets/sponsor-gatorade.jpg'
 
@@ -28,6 +28,9 @@ interface DemoState {
   activeSponsor: string | null
   attendanceByMatch: Record<string, Record<string, AttendanceStatus>>
   matchEventsByMatch: Record<string, DemoMatchEvent[]>
+  postLikeCounts: Record<string, number>
+  myLikedPostIds: string[]
+  photos: Photo[]
 
   setTeamName: (name: string) => void
   setTeamLogo: (url: string | null) => void
@@ -52,6 +55,10 @@ interface DemoState {
   removeTitle: (id: string) => void
   addMatchEvent: (matchId: string, playerId: string, type: FixtureEventType) => void
   removeMatchEvent: (matchId: string, eventId: string) => void
+  toggleLike: (postId: string) => void
+  addPhoto: (photo: Photo) => void
+  toggleFeaturedPhoto: (id: string) => void
+  removePhoto: (id: string) => void
   resetDemo: () => void
 }
 
@@ -70,6 +77,18 @@ const seed = {
   activeSponsor: sponsorGatorade as string | null,
   attendanceByMatch: {} as Record<string, Record<string, AttendanceStatus>>,
   matchEventsByMatch: {} as Record<string, DemoMatchEvent[]>,
+  postLikeCounts: {} as Record<string, number>,
+  myLikedPostIds: [] as string[],
+  photos: Array.from({ length: 9 }, (_, i) => ({
+    id: `demo-ph-${i}`,
+    team_id: 'mock-team-1',
+    match_id: null,
+    url: `https://picsum.photos/seed/team${i}/600/600`,
+    caption: `Foto ${i + 1}`,
+    uploaded_by: 'mock-user-1',
+    created_at: new Date().toISOString(),
+    featured: i < 3,
+  })) as Photo[],
 }
 
 export const useDemoStore = create<DemoState>()(
@@ -167,6 +186,21 @@ export const useDemoStore = create<DemoState>()(
           [matchId]: (state.matchEventsByMatch[matchId] ?? []).filter(e => e.id !== eventId),
         },
       })),
+      toggleLike: (postId) => set(state => {
+        const liked = state.myLikedPostIds.includes(postId)
+        const current = state.postLikeCounts[postId] ?? 0
+        return {
+          myLikedPostIds: liked ? state.myLikedPostIds.filter(id => id !== postId) : [...state.myLikedPostIds, postId],
+          postLikeCounts: { ...state.postLikeCounts, [postId]: Math.max(0, current + (liked ? -1 : 1)) },
+        }
+      }),
+
+      addPhoto: (photo) => set(state => ({ photos: [photo, ...state.photos] })),
+      toggleFeaturedPhoto: (id) => set(state => ({
+        photos: state.photos.map(p => p.id === id ? { ...p, featured: !p.featured } : p),
+      })),
+      removePhoto: (id) => set(state => ({ photos: state.photos.filter(p => p.id !== id) })),
+
       resetDemo: () => set(seed),
     }),
     { name: 'teamapp-demo-data' }

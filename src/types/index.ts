@@ -65,6 +65,7 @@ export interface Player {
   created_at: string
   responsibility?: PlayerResponsibility | null
   email?: string | null
+  nickname?: string | null
   category?: Category
 }
 
@@ -138,6 +139,7 @@ export interface Photo {
   caption: string | null
   uploaded_by: string
   created_at: string
+  featured?: boolean
 }
 
 export interface Post {
@@ -151,6 +153,13 @@ export interface Post {
   created_by: string
   created_at: string
   author?: Profile
+}
+
+export interface PostLike {
+  id: string
+  post_id: string
+  user_id: string
+  created_at: string
 }
 
 // Computed / aggregated types

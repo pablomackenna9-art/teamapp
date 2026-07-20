@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, X, Camera, Check, Home } from 'lucide-react'
+import { Plus, X, Camera, Check, Home, Heart } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { SponsorBanner } from '@/components/SponsorBanner'
 import { useTeamStore } from '@/store/authStore'
@@ -228,7 +228,13 @@ function CreatePostSheet({ teamColor, categories, defaultCategoryId, onSave, onC
 }
 
 // ── Post card ─────────────────────────────────────────────────────────────────
-function PostCard({ post, categories }: { post: Post; categories: Category[] }) {
+function PostCard({ post, categories, likeCount = 0, liked = false, onToggleLike }: {
+  post: Post
+  categories: Category[]
+  likeCount?: number
+  liked?: boolean
+  onToggleLike?: () => void
+}) {
   const meta = POST_META[post.type]
   const bgPhoto = post.photo_url
   const targetCategory = post.category_id ? categories.find(c => c.id === post.category_id) : null
@@ -268,6 +274,17 @@ function PostCard({ post, categories }: { post: Post; categories: Category[] }) 
         </div>
         <p className="text-white font-bold text-base leading-tight mb-1">{post.title}</p>
         <p className={`text-sm leading-relaxed ${bgPhoto ? 'text-gray-200' : 'text-gray-400'}`}>{post.content}</p>
+
+        {onToggleLike && (
+          <button
+            onClick={e => { e.stopPropagation(); onToggleLike() }}
+            className="flex items-center gap-1.5 mt-3 text-xs font-semibold"
+            style={{ color: liked ? '#ef4444' : '#6b7280' }}
+          >
+            <Heart size={15} fill={liked ? '#ef4444' : 'none'} />
+            {likeCount > 0 ? likeCount : 'Me gusta'}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -284,9 +301,42 @@ export function NewsPage() {
 
   const demoPosts = useDemoStore(s => s.posts)
   const addDemoPost = useDemoStore(s => s.addPost)
+  const demoLikeCounts = useDemoStore(s => s.postLikeCounts)
+  const demoLikedPostIds = useDemoStore(s => s.myLikedPostIds)
+  const toggleDemoLike = useDemoStore(s => s.toggleLike)
 
   const [posts, setPosts] = useState<Post[]>(isDemo ? demoPosts : [])
   const [loading, setLoading] = useState(!isDemo)
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({})
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set())
+
+  async function loadLikes(postIds: string[]) {
+    if (isDemo || postIds.length === 0) return
+    const { data } = await supabase.from('post_likes').select('post_id, user_id').in('post_id', postIds)
+    const counts: Record<string, number> = {}
+    const mine = new Set<string>()
+    for (const row of data ?? []) {
+      counts[row.post_id] = (counts[row.post_id] ?? 0) + 1
+      if (row.user_id === user?.id) mine.add(row.post_id)
+    }
+    setLikeCounts(counts)
+    setLikedPostIds(mine)
+  }
+
+  async function toggleLike(postId: string) {
+    if (isDemo) { toggleDemoLike(postId); return }
+    if (!user) return
+    const alreadyLiked = likedPostIds.has(postId)
+    if (alreadyLiked) {
+      setLikedPostIds(prev => { const s = new Set(prev); s.delete(postId); return s })
+      setLikeCounts(prev => ({ ...prev, [postId]: Math.max(0, (prev[postId] ?? 1) - 1) }))
+      await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id)
+    } else {
+      setLikedPostIds(prev => new Set(prev).add(postId))
+      setLikeCounts(prev => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }))
+      await supabase.from('post_likes').insert({ team_id: currentTeamId, post_id: postId, user_id: user.id })
+    }
+  }
 
   async function loadPosts() {
     if (isDemo) { setPosts(demoPosts); setLoading(false); return }
@@ -299,6 +349,7 @@ export function NewsPage() {
     if (error) { toast.error('No se pudieron cargar las noticias'); setLoading(false); return }
     setPosts(data ?? [])
     setLoading(false)
+    loadLikes((data ?? []).map(p => p.id))
   }
 
   useEffect(() => {
@@ -360,7 +411,14 @@ export function NewsPage() {
         ) : posts.length === 0 ? (
           <p className="text-gray-500 text-sm text-center py-8">Sin publicaciones todavía</p>
         ) : posts.map(post => (
-          <PostCard key={post.id} post={post} categories={activeCategories} />
+          <PostCard
+            key={post.id}
+            post={post}
+            categories={activeCategories}
+            likeCount={isDemo ? (demoLikeCounts[post.id] ?? 0) : (likeCounts[post.id] ?? 0)}
+            liked={isDemo ? demoLikedPostIds.includes(post.id) : likedPostIds.has(post.id)}
+            onToggleLike={() => toggleLike(post.id)}
+          />
         ))}
       </div>
 
