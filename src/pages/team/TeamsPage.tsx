@@ -332,6 +332,78 @@ function LeagueManagerSheet({ leagues, onClose, onCreated }: {
   )
 }
 
+// ── Super admin: assign/change which league an existing club belongs to ───────
+function AssignLeagueSheet({ team, leagues, onClose, onAssigned }: {
+  team: Team
+  leagues: League[]
+  onClose: () => void
+  onAssigned: (leagueId: string | null) => void
+}) {
+  const [saving, setSaving] = useState(false)
+
+  async function assign(leagueId: string | null) {
+    setSaving(true)
+    const { error } = await supabase.from('teams').update({ league_id: leagueId }).eq('id', team.id)
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    onAssigned(leagueId)
+    toast.success(leagueId ? 'Liga asignada' : 'Liga quitada')
+    onClose()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-lg bg-gray-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-700 p-6 pb-8 sm:pb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-white font-bold text-lg">Liga de {team.name}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
+        </div>
+        <p className="text-gray-500 text-sm mb-5">Elegí a qué liga pertenece este club.</p>
+
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => assign(null)}
+            disabled={saving}
+            className="flex items-center gap-3 p-3 rounded-2xl border text-left transition-all"
+            style={!team.league_id
+              ? { background: '#37415140', borderColor: '#6b7280' }
+              : { background: '#111827', borderColor: '#1f2937' }
+            }
+          >
+            <span className="text-sm font-semibold text-white flex-1">Sin liga</span>
+            {!team.league_id && <Check size={16} className="text-gray-400" />}
+          </button>
+          {leagues.map(l => {
+            const isCurrent = team.league_id === l.id
+            return (
+              <button
+                key={l.id}
+                onClick={() => assign(l.id)}
+                disabled={saving}
+                className="flex items-center gap-3 p-3 rounded-2xl border text-left transition-all"
+                style={isCurrent
+                  ? { background: '#3b82f620', borderColor: '#3b82f6' }
+                  : { background: '#111827', borderColor: '#1f2937' }
+                }
+              >
+                <Trophy size={15} className="text-blue-400 shrink-0" />
+                <span className="text-sm font-semibold text-white flex-1">{l.name}</span>
+                {isCurrent && <Check size={16} className="text-blue-400" />}
+              </button>
+            )
+          })}
+          {leagues.length === 0 && (
+            <p className="text-gray-600 text-sm text-center py-4">Todavía no creaste ninguna liga.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function TeamsPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -347,6 +419,7 @@ export function TeamsPage() {
   const [showBulkSponsor, setShowBulkSponsor] = useState(false)
   const [leagues, setLeagues] = useState<League[]>([])
   const [showLeagueManager, setShowLeagueManager] = useState(false)
+  const [leagueTeam, setLeagueTeam] = useState<Team | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -386,7 +459,10 @@ export function TeamsPage() {
   }, [user])
 
   const showDemoCard = !teams.find(t => t.slug === 'maestros-fc')
-  const showPlatformAdminUI = isPlatformAdmin || demoPlatformAdminPreview
+  // The "preview" role switcher is only meaningful in pure demo mode (no real
+  // Supabase session) — it must never make a real, logged-in user look like
+  // a platform admin when they aren't actually one in the database.
+  const showPlatformAdminUI = isPlatformAdmin || (!isSupabaseConfigured && demoPlatformAdminPreview)
 
   function renderTeamCard(team: Team) {
     return (
@@ -411,6 +487,13 @@ export function TeamsPage() {
         </div>
         {showPlatformAdminUI && (
           <div className="ml-auto flex items-center gap-1 shrink-0">
+            <button
+              onClick={e => { e.stopPropagation(); setLeagueTeam(team) }}
+              className="p-2 rounded-lg text-gray-600 hover:text-blue-400 hover:bg-blue-500/10"
+              aria-label="Liga"
+            >
+              <Trophy size={16} />
+            </button>
             <button
               onClick={e => { e.stopPropagation(); setSponsorTeam(team) }}
               className="p-2 rounded-lg text-gray-600 hover:text-amber-400 hover:bg-amber-500/10"
@@ -616,6 +699,15 @@ export function TeamsPage() {
           leagues={leagues}
           onClose={() => setShowLeagueManager(false)}
           onCreated={league => setLeagues(prev => [...prev, league].sort((a, b) => a.name.localeCompare(b.name)))}
+        />
+      )}
+
+      {leagueTeam && (
+        <AssignLeagueSheet
+          team={leagueTeam}
+          leagues={leagues}
+          onClose={() => setLeagueTeam(null)}
+          onAssigned={leagueId => setTeams(prev => prev.map(t => t.id === leagueTeam.id ? { ...t, league_id: leagueId } : t))}
         />
       )}
     </div>
