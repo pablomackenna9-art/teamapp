@@ -14,15 +14,17 @@ export function SponsorBanner({ sectionKey }: SponsorBannerProps) {
   return (
     <div
       key={sectionKey}
-      className="mx-4 rounded-2xl overflow-hidden border border-gray-800 bg-black flex items-center justify-center"
-      style={{ height: 130 }}
+      className="mx-4 rounded-2xl overflow-hidden border border-gray-800 bg-black"
+      style={{ height: 110 }}
     >
-      {/* object-contain so the whole banner is always visible, never cropped,
-          regardless of the aspect ratio the sponsor image was uploaded at. */}
+      {/* object-cover so the image fills the banner edge-to-edge with no
+          letterboxing — upload sponsor images already cropped to roughly
+          this banner's ~4.4:1 ratio (see the size hint where it's uploaded)
+          so nothing important gets cut off at the sides. */}
       <img
         src={activeSponsor}
         alt="Auspiciador"
-        className="w-full h-full object-contain block"
+        className="w-full h-full object-cover block"
       />
     </div>
   )

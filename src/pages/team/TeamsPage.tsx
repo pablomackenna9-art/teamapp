@@ -59,8 +59,8 @@ function TeamSponsorSheet({ team, onClose, onUpdated }: {
         {team.sponsor_url && (
           <div className="mb-4">
             <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Activo actualmente</p>
-            <div className="rounded-xl overflow-hidden border-2 border-gray-700 bg-black flex items-center justify-center" style={{ height: 100 }}>
-              <img src={team.sponsor_url} alt="Auspiciador" className="w-full h-full object-contain" />
+            <div className="rounded-xl overflow-hidden border-2 border-gray-700 bg-black" style={{ height: 100 }}>
+              <img src={team.sponsor_url} alt="Auspiciador" className="w-full h-full object-cover" />
             </div>
             <button
               onClick={handleRemove}
@@ -72,7 +72,7 @@ function TeamSponsorSheet({ team, onClose, onUpdated }: {
         )}
 
         <p className="text-gray-600 text-xs mb-3">
-          Medida recomendada: 1200×300px (banner horizontal), fondo transparente o negro y el logo centrado.
+          Medida recomendada: 1200×275px, ya recortada en formato banner ancho — la imagen llena todo el espacio sin franjas negras.
         </p>
 
         <button
@@ -153,8 +153,8 @@ function BulkSponsorSheet({ teams, onClose, onUpdated }: {
 
         <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4">
           {preview ? (
-            <div className="relative rounded-2xl overflow-hidden border-2 border-gray-700 bg-black flex items-center justify-center shrink-0" style={{ height: 100 }}>
-              <img src={preview} alt="Auspiciador" className="w-full h-full object-contain" />
+            <div className="relative rounded-2xl overflow-hidden border-2 border-gray-700 bg-black shrink-0" style={{ height: 100 }}>
+              <img src={preview} alt="Auspiciador" className="w-full h-full object-cover" />
               <button
                 onClick={() => { setFile(null); setPreview(null) }}
                 className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 flex items-center justify-center text-white"
@@ -169,7 +169,7 @@ function BulkSponsorSheet({ teams, onClose, onUpdated }: {
             >
               <ImagePlus size={22} />
               <span className="text-xs font-semibold">Elegí una imagen</span>
-              <span className="text-[11px] text-gray-600">Recomendado: 1200×300px</span>
+              <span className="text-[11px] text-gray-600">Recomendado: 1200×275px, banner ancho ya recortado</span>
             </button>
           )}
           <input
