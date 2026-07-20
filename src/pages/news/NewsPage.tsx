@@ -402,7 +402,7 @@ export function NewsPage() {
       />
 
       <div className="mb-3">
-        <SponsorBanner sectionKey="news" />
+        <SponsorBanner sectionKey="news" categoryId={defaultCategoryId} />
       </div>
 
       <div className="px-4 flex flex-col gap-3">

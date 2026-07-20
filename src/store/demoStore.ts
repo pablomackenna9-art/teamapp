@@ -36,6 +36,7 @@ interface DemoState {
   setTeamLogo: (url: string | null) => void
   addCategory: (category: Category) => void
   renameCategory: (id: string, name: string) => void
+  setCategorySponsor: (id: string, url: string | null) => void
   addPlayer: (player: Player) => void
   addPlayers: (players: Player[]) => void
   updatePlayerPhoto: (id: string, url: string) => void
@@ -106,6 +107,9 @@ export const useDemoStore = create<DemoState>()(
       addCategory: (category) => set(state => ({ categories: [...state.categories, category] })),
       renameCategory: (id, name) => set(state => ({
         categories: state.categories.map(c => c.id === id ? { ...c, name } : c),
+      })),
+      setCategorySponsor: (id, url) => set(state => ({
+        categories: state.categories.map(c => c.id === id ? { ...c, sponsor_url: url } : c),
       })),
 
       addPlayer: (player) => set(state => ({ players: [...state.players, player] })),

@@ -5,7 +5,6 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/Card'
 import { EmptyState } from '@/components/EmptyState'
 import { useAuthStore, useTeamStore } from '@/store/authStore'
-import { useDemoStore } from '@/store/demoStore'
 import { mockTeam } from '@/lib/mock'
 import { initials } from '@/lib/utils'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
@@ -210,130 +209,83 @@ function TitlesManager({ teamColor }: { teamColor: string }) {
   )
 }
 
-function SponsorsManager({ teamColor, teamName, teamId, isDemo }: {
-  teamColor: string; teamName: string; teamId: string | null; isDemo: boolean
+// One upload/remove row per category — sponsors are per category, not per club.
+function CategorySponsorRow({ category, teamId, isDemo }: {
+  category: { id: string; name: string; sponsor_url?: string | null }
+  teamId: string | null
+  isDemo: boolean
 }) {
-  const setTeamSponsor = useTeamStore(s => s.setTeamSponsor)
-  const activeSponsorFromStore = useTeamStore(s => s.teamSponsorUrl)
-
-  // Demo keeps a small gallery to pick from; real teams manage a single image directly.
-  const demoSponsors = useDemoStore(s => s.sponsors)
-  const addDemoSponsor = useDemoStore(s => s.addSponsor)
-  const removeDemoSponsor = useDemoStore(s => s.removeSponsor)
-
+  const setCategorySponsor = useTeamStore(s => s.setCategorySponsor)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  async function handleAddDemo(file: File) {
+  async function handleUpload(file: File) {
     if (!file.type.startsWith('image/')) { toast.error('Seleccioná una imagen'); return }
-    setUploading(true)
-    const dataUrl = await fileToDataUrl(file)
-    addDemoSponsor(dataUrl)
-    toast.success('Auspiciador agregado a la galería')
-    setUploading(false)
-  }
-
-  async function handleUploadReal(file: File) {
-    if (!file.type.startsWith('image/')) { toast.error('Seleccioná una imagen'); return }
-    if (!teamId) return
     setUploading(true)
     try {
-      const url = await uploadTeamPhoto(file, `${teamId}/sponsor`)
-      const { error } = await supabase.from('teams').update({ sponsor_url: url }).eq('id', teamId)
-      if (error) throw error
-      setTeamSponsor(url)
-      toast.success('Auspiciador actualizado')
+      const url = isDemo ? await fileToDataUrl(file) : await uploadTeamPhoto(file, `${teamId}/sponsor-${category.id}`)
+      await setCategorySponsor(category.id, url)
+      toast.success(`Auspiciador de ${category.name} actualizado`)
     } catch (err: any) {
       toast.error(err.message ?? 'No se pudo subir el auspiciador')
     }
     setUploading(false)
   }
 
-  async function handleRemoveReal() {
-    if (!teamId) return
-    const { error } = await supabase.from('teams').update({ sponsor_url: null }).eq('id', teamId)
-    if (error) { toast.error(error.message); return }
-    setTeamSponsor(null)
+  async function handleRemove() {
+    await setCategorySponsor(category.id, null)
     toast.success('Auspiciador quitado')
   }
 
   return (
-    <div className="mx-4 mb-3">
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1">Auspiciador de {teamName}</p>
-      <Card padding={false} className="p-3">
-        <p className="text-gray-500 text-xs mb-3">
-          Elegí qué auspiciador se muestra en <span className="text-gray-300">todas las secciones y categorías</span> de este club. Se mantiene fijo hasta que lo cambies.
-        </p>
-        <p className="text-gray-600 text-[11px] mb-3">
-          Medida recomendada: 1200×275px (banner horizontal ancho) ya recortada así — la imagen llena todo el banner sin espacios negros, así que si no viene en esa proporción se recorta un poco de los costados.
-        </p>
-
-        {activeSponsorFromStore && (
-          <div className="mb-3">
-            <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Activo actualmente</p>
-            <div className="rounded-xl overflow-hidden border-2 bg-black" style={{ borderColor: teamColor, height: 90 }}>
-              <img src={activeSponsorFromStore} alt="Auspiciador activo" className="w-full h-full object-cover" />
-            </div>
-          </div>
-        )}
-
-        {isDemo && demoSponsors.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {demoSponsors.map((url, i) => {
-              const isActive = url === activeSponsorFromStore
-              return (
-                <button
-                  key={i}
-                  onClick={() => setTeamSponsor(url)}
-                  className="relative rounded-xl overflow-hidden border-2 aspect-square"
-                  style={{ borderColor: isActive ? teamColor : '#1f2937' }}
-                >
-                  <img src={url} alt={`Auspiciador ${i + 1}`} className="w-full h-full object-cover" />
-                  {isActive && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                      <Check size={18} color={teamColor} />
-                    </div>
-                  )}
-                  <button
-                    onClick={e => { e.stopPropagation(); removeDemoSponsor(i) }}
-                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white"
-                  >
-                    <Trash2 size={10} />
-                  </button>
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        {activeSponsorFromStore && (
-          <button
-            onClick={() => isDemo ? setTeamSponsor(null) : handleRemoveReal()}
-            className="w-full mb-2 py-2 rounded-xl text-xs font-semibold text-gray-500 border border-gray-800"
-          >
-            Quitar auspiciador de este club
+    <div className="py-3 border-b border-gray-800 last:border-0">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-semibold text-white">{category.name}</span>
+        {category.sponsor_url && (
+          <button onClick={handleRemove} className="text-gray-600 hover:text-red-400 shrink-0">
+            <Trash2 size={14} />
           </button>
         )}
+      </div>
+      {category.sponsor_url && (
+        <div className="rounded-xl overflow-hidden border border-gray-700 bg-black mb-2" style={{ height: 70 }}>
+          <img src={category.sponsor_url} alt={`Auspiciador ${category.name}`} className="w-full h-full object-cover" />
+        </div>
+      )}
+      <button
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold"
+        style={{ background: '#22c55e20', color: '#22c55e' }}
+      >
+        <Plus size={13} /> {uploading ? 'Subiendo...' : (category.sponsor_url ? 'Cambiar imagen' : 'Subir imagen')}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }}
+      />
+    </div>
+  )
+}
 
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold"
-          style={{ background: teamColor + '20', color: teamColor }}
-        >
-          <Plus size={14} /> {uploading ? 'Subiendo...' : (isDemo ? 'Subir nueva imagen' : (activeSponsorFromStore ? 'Cambiar imagen' : 'Subir imagen'))}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={e => {
-            const f = e.target.files?.[0]
-            if (!f) return
-            isDemo ? handleAddDemo(f) : handleUploadReal(f)
-          }}
-        />
+function SponsorsManager({ teamId, isDemo }: { teamId: string | null; isDemo: boolean }) {
+  const categories = useTeamStore(s => s.categories)
+
+  if (categories.length === 0) return null
+
+  return (
+    <div className="mx-4 mb-3">
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 px-1">Auspiciadores por categoría</p>
+      <p className="text-gray-600 text-[11px] mb-2 px-1">
+        Cada categoría puede tener su propio auspiciador. Medida recomendada: 1200×275px, ya recortada en formato banner ancho.
+      </p>
+      <Card padding={false} className="px-4">
+        {categories.map(cat => (
+          <CategorySponsorRow key={cat.id} category={cat} teamId={teamId} isDemo={isDemo} />
+        ))}
       </Card>
     </div>
   )
@@ -501,12 +453,7 @@ export function MorePage() {
 
       {/* Sponsors — platform super admin only */}
       {isPlatformAdmin && (
-        <SponsorsManager
-          teamColor={teamColor}
-          teamName={teamName || mockTeam.name}
-          teamId={currentTeamId}
-          isDemo={isDemo}
-        />
+        <SponsorsManager teamId={currentTeamId} isDemo={isDemo} />
       )}
 
       <div className="px-4 flex flex-col gap-3">

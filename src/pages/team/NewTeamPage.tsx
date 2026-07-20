@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/Button'
 import { Card } from '@/components/Card'
 import { ImagePlus, X, Plus, Trash2 } from 'lucide-react'
+import type { League } from '@/types'
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
@@ -40,6 +41,12 @@ export function NewTeamPage() {
   const [sponsorPreview, setSponsorPreview] = useState<string | null>(null)
   const [categoryNames, setCategoryNames] = useState<string[]>([''])
   const [coordinadorEmail, setCoordinadorEmail] = useState('')
+  const [leagues, setLeagues] = useState<League[]>([])
+  const [leagueId, setLeagueId] = useState<string>('')
+
+  useEffect(() => {
+    supabase.from('leagues').select('*').order('name').then(({ data }) => setLeagues(data ?? []))
+  }, [])
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { sport: 'football', primary_color: '#22c55e', secondary_color: '#3b82f6' },
@@ -78,24 +85,31 @@ export function NewTeamPage() {
       return
     }
 
-    // Sponsor is optional — if the super admin picked one, upload it now
-    // that the team (and its id) exists; otherwise the club just starts
-    // with no sponsor and one can be added later from Configuración.
-    if (sponsorFile) {
-      try {
-        const url = await uploadTeamPhoto(sponsorFile, `${team.id}/sponsor`)
-        await supabase.from('teams').update({ sponsor_url: url }).eq('id', team.id)
-      } catch {
-        toast.error('El equipo se creó, pero no se pudo subir el auspiciador. Podés agregarlo después.')
-      }
+    if (leagueId) {
+      const { error: leagueError } = await supabase.from('teams').update({ league_id: leagueId }).eq('id', team.id)
+      if (leagueError) toast.error('El equipo se creó, pero no se pudo asignar la liga: ' + leagueError.message)
     }
 
     const validCategories = categoryNames.map(c => c.trim()).filter(Boolean)
+    let createdCategories: { id: string }[] = []
     if (validCategories.length > 0) {
-      const { error: catError } = await supabase.from('categories').insert(
+      const { data: catRows, error: catError } = await supabase.from('categories').insert(
         validCategories.map(name => ({ team_id: team.id, name }))
-      )
+      ).select()
       if (catError) toast.error('El equipo se creó, pero no se pudieron crear las categorías: ' + catError.message)
+      else createdCategories = catRows ?? []
+    }
+
+    // Sponsor is optional — if the super admin picked one, upload it now that
+    // the team (and its categories) exist, and apply it to every category
+    // just created. Sponsors live per-category, not per-club.
+    if (sponsorFile && createdCategories.length > 0) {
+      try {
+        const url = await uploadTeamPhoto(sponsorFile, `${team.id}/sponsor`)
+        await supabase.from('categories').update({ sponsor_url: url }).in('id', createdCategories.map(c => c.id))
+      } catch {
+        toast.error('El equipo se creó, pero no se pudo subir el auspiciador. Podés agregarlo después.')
+      }
     }
 
     if (coordinadorEmail.trim()) {
@@ -142,6 +156,18 @@ export function NewTeamPage() {
                 />
               </div>
               {errors.slug && <p className="text-red-400 text-xs mt-1">{errors.slug.message}</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">Liga (opcional)</label>
+              <select
+                value={leagueId}
+                onChange={e => setLeagueId(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm outline-none"
+              >
+                <option value="">Sin liga</option>
+                {leagues.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
             </div>
 
             <div>
@@ -279,7 +305,7 @@ export function NewTeamPage() {
         <Card>
           <p className="text-sm font-medium text-gray-300 mb-1">Auspiciador (opcional)</p>
           <p className="text-xs text-gray-500 mb-3">
-            Podés asignarle un auspiciador ahora o dejarlo sin ninguno — se puede agregar después desde Configuración.
+            Se asigna a todas las categorías que crees arriba (podés cambiarlo por categoría después desde Configuración).
           </p>
           {sponsorPreview ? (
             <div className="relative rounded-2xl overflow-hidden border border-gray-800 bg-black" style={{ height: 100 }}>

@@ -890,3 +890,41 @@ create policy "post_likes_delete" on public.post_likes for delete using (user_id
 
 -- Photos: mark some as "featured" to show in the Home carousel
 alter table public.photos add column if not exists featured boolean not null default false;
+-- ============================================================
+-- TeamApp - Sponsors move from per-team to per-category
+-- ============================================================
+
+alter table public.categories add column if not exists sponsor_url text;
+
+-- teams.sponsor_url is no longer used by the app (kept for backward
+-- compatibility / rollback safety, not read anywhere in the UI anymore).
+-- ============================================================
+-- TeamApp - Leagues: the super admin groups clubs into leagues
+-- so "Todos los equipos" and cross-club rankings can be split
+-- by league. Any authenticated user can read the league list
+-- (needed for the "new team" picker); only the platform super
+-- admin can create new ones.
+-- ============================================================
+
+create table if not exists public.leagues (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz default now()
+);
+
+alter table public.leagues enable row level security;
+
+drop policy if exists "leagues_select" on public.leagues;
+create policy "leagues_select" on public.leagues for select using (auth.uid() is not null);
+
+drop policy if exists "leagues_insert" on public.leagues;
+create policy "leagues_insert" on public.leagues for insert with check (is_platform_admin());
+
+insert into public.leagues (name) values
+  ('Liga San José'),
+  ('Liga Club Chicureo Norte'),
+  ('Liga LIF'),
+  ('Liga Oriente')
+on conflict (name) do nothing;
+
+alter table public.teams add column if not exists league_id uuid references public.leagues on delete set null;

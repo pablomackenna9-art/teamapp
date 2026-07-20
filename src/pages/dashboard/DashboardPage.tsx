@@ -421,9 +421,6 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
 
   return (
     <div className="flex flex-col gap-5 pb-6">
-      {/* Sponsor — top of the page */}
-      <SponsorBanner sectionKey="home-top" />
-
       {/* News carousel */}
       <NewsCarousel teamColor={teamColor} />
 
@@ -542,9 +539,6 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
       {/* Títulos */}
       <TitlesSection teamColor={teamColor} categories={categories} titles={titles} />
 
-      {/* Sponsor — bottom of the page */}
-      <SponsorBanner sectionKey="home-bottom" />
-
       {/* Admin actions */}
       {isAdmin && (
         <div className="px-4 grid grid-cols-2 gap-3">
@@ -643,7 +637,7 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo }
   return (
     <div className="flex flex-col gap-5 pb-6">
       {/* Sponsor — top of the category */}
-      <SponsorBanner sectionKey={`category-top-${categoryId}`} />
+      <SponsorBanner sectionKey={`category-top-${categoryId}`} categoryId={categoryId} />
 
       {/* News targeted at this category only */}
       <NewsCarousel teamColor={teamColor} categoryId={categoryId} />
@@ -788,7 +782,7 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo }
       )}
 
       {/* Sponsor — bottom of the category */}
-      <SponsorBanner sectionKey={`category-bottom-${categoryId}`} />
+      <SponsorBanner sectionKey={`category-bottom-${categoryId}`} categoryId={categoryId} />
 
       {isAdmin && (
         <div className="px-4 grid grid-cols-2 gap-3">

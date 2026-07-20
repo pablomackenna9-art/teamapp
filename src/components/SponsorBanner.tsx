@@ -2,13 +2,14 @@ import { useTeamStore } from '@/store/authStore'
 
 interface SponsorBannerProps {
   sectionKey?: string
+  categoryId?: string | null
 }
 
-// A single "active" sponsor is assigned per club by the platform super admin
-// and shows everywhere (every category, every section) until changed —
-// no automatic rotation. All banners render at the same standard size.
-export function SponsorBanner({ sectionKey }: SponsorBannerProps) {
-  const activeSponsor = useTeamStore(s => s.teamSponsorUrl)
+// Sponsors are assigned per category (not per club) by the platform super
+// admin — each category can show a different sponsor, or none at all.
+export function SponsorBanner({ sectionKey, categoryId = null }: SponsorBannerProps) {
+  const categories = useTeamStore(s => s.categories)
+  const activeSponsor = categoryId ? categories.find(c => c.id === categoryId)?.sponsor_url : null
   if (!activeSponsor) return null
 
   return (

@@ -283,7 +283,7 @@ export function FixturePage() {
       />
 
       <div className="mb-3">
-        <SponsorBanner sectionKey="fixture" />
+        <SponsorBanner sectionKey="fixture" categoryId={selectedCatId} />
       </div>
 
       {isAdmin && (

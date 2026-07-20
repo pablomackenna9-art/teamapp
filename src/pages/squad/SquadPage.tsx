@@ -382,7 +382,7 @@ export function SquadPage() {
   return (
     <div className="max-w-lg mx-auto">
       <div className="pt-4">
-        <SponsorBanner sectionKey="squad" />
+        <SponsorBanner sectionKey="squad" categoryId={catFilter !== "all" ? catFilter : null} />
       </div>
 
       {/* Header */}

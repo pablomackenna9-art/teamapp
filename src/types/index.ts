@@ -19,10 +19,17 @@ export interface Team {
   slug: string
   logo_url: string | null
   sponsor_url?: string | null
+  league_id?: string | null
   primary_color: string
   secondary_color: string
   sport: Sport
   created_by: string
+  created_at: string
+}
+
+export interface League {
+  id: string
+  name: string
   created_at: string
 }
 
@@ -48,6 +55,7 @@ export interface Category {
   id: string
   team_id: string
   name: string
+  sponsor_url?: string | null
 }
 
 export type PlayerResponsibility = 'dt' | 'tesorero' | 'coordinador'

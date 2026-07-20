@@ -38,7 +38,7 @@ export function StandingsPage() {
       />
 
       <div className="mb-3">
-        <SponsorBanner sectionKey="standings" />
+        <SponsorBanner sectionKey="standings" categoryId={selectedCatId} />
       </div>
 
       {/* Category tabs */}

@@ -56,6 +56,7 @@ interface TeamState {
   setTeamLogo: (url: string | null) => void
   setTeamSponsor: (url: string | null) => void
   renameCategory: (id: string, name: string) => void
+  setCategorySponsor: (id: string, url: string | null) => Promise<void>
   setMatchResult: (matchId: string, homeScore: number, awayScore: number) => void
   setPointsPerWin: (categoryId: string, pts: 2 | 3) => void
   addFixtureMatches: (matches: FixtureMatch[]) => void
@@ -107,6 +108,16 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       categories: state.categories.map(c => c.id === id ? { ...c, name } : c),
     }))
     if (isMockTeamId(get().currentTeamId)) useDemoStore.getState().renameCategory(id, name)
+  },
+  setCategorySponsor: async (id, url) => {
+    set(state => ({
+      categories: state.categories.map(c => c.id === id ? { ...c, sponsor_url: url } : c),
+    }))
+    if (isMockTeamId(get().currentTeamId)) {
+      useDemoStore.getState().setCategorySponsor(id, url)
+    } else {
+      await supabase.from('categories').update({ sponsor_url: url }).eq('id', id)
+    }
   },
   setMatchResult: (matchId, homeScore, awayScore) => {
     set(state => ({

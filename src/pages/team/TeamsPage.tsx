@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Shield, Crown, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check } from 'lucide-react'
+import { Plus, Shield, Crown, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, BarChart3 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore, useTeamStore } from '@/store/authStore'
@@ -9,38 +9,44 @@ import { Card } from '@/components/Card'
 import { Button } from '@/components/Button'
 import { EmptyState } from '@/components/EmptyState'
 import { uploadTeamPhoto } from '@/lib/storage'
-import type { Team } from '@/types'
+import type { Team, Category, League } from '@/types'
 import { mockTeam } from '@/lib/mock'
 import { initials } from '@/lib/utils'
 
-// ── Super admin: change/remove a specific club's sponsor without entering it ──
-function TeamSponsorSheet({ team, onClose, onUpdated }: {
+// ── Super admin: change/remove a specific club's sponsor per category, without entering it ──
+function TeamSponsorSheet({ team, onClose }: {
   team: Team
   onClose: () => void
-  onUpdated: (sponsorUrl: string | null) => void
 }) {
-  const [uploading, setUploading] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
-  async function handleUpload(file: File) {
+  useEffect(() => {
+    supabase.from('categories').select('*').eq('team_id', team.id).order('name')
+      .then(({ data }) => { setCategories(data ?? []); setLoading(false) })
+  }, [team.id])
+
+  async function handleUpload(cat: Category, file: File) {
     if (!file.type.startsWith('image/')) { toast.error('Seleccioná una imagen'); return }
-    setUploading(true)
+    setUploadingId(cat.id)
     try {
-      const url = await uploadTeamPhoto(file, `${team.id}/sponsor`)
-      const { error } = await supabase.from('teams').update({ sponsor_url: url }).eq('id', team.id)
+      const url = await uploadTeamPhoto(file, `${team.id}/sponsor-${cat.id}`)
+      const { error } = await supabase.from('categories').update({ sponsor_url: url }).eq('id', cat.id)
       if (error) throw error
-      onUpdated(url)
-      toast.success('Auspiciador actualizado')
+      setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, sponsor_url: url } : c))
+      toast.success(`Auspiciador de ${cat.name} actualizado`)
     } catch (err: any) {
       toast.error(err.message ?? 'No se pudo subir el auspiciador')
     }
-    setUploading(false)
+    setUploadingId(null)
   }
 
-  async function handleRemove() {
-    const { error } = await supabase.from('teams').update({ sponsor_url: null }).eq('id', team.id)
+  async function handleRemove(cat: Category) {
+    const { error } = await supabase.from('categories').update({ sponsor_url: null }).eq('id', cat.id)
     if (error) { toast.error(error.message); return }
-    onUpdated(null)
+    setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, sponsor_url: null } : c))
     toast.success('Auspiciador quitado')
   }
 
@@ -49,61 +55,68 @@ function TeamSponsorSheet({ team, onClose, onUpdated }: {
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-lg bg-gray-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-700 p-6 pb-10 sm:pb-6">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-white font-bold text-lg">Auspiciador de {team.name}</h2>
+      <div className="w-full max-w-lg bg-gray-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-700 p-6 pb-10 sm:pb-6 max-h-[85dvh] sm:max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <h2 className="text-white font-bold text-lg">Auspiciadores de {team.name}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
         </div>
-        <p className="text-gray-500 text-sm mb-5">Se muestra en todas las secciones y categorías de este club.</p>
+        <p className="text-gray-500 text-sm mb-1 shrink-0">Cada categoría puede tener su propio auspiciador.</p>
+        <p className="text-gray-600 text-xs mb-4 shrink-0">Medida recomendada: 1200×275px, banner ancho ya recortado.</p>
 
-        {team.sponsor_url && (
-          <div className="mb-4">
-            <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Activo actualmente</p>
-            <div className="rounded-xl overflow-hidden border-2 border-gray-700 bg-black" style={{ height: 100 }}>
-              <img src={team.sponsor_url} alt="Auspiciador" className="w-full h-full object-cover" />
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="w-6 h-6 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} />
             </div>
-            <button
-              onClick={handleRemove}
-              className="w-full mt-2 py-2 rounded-xl text-xs font-semibold text-gray-500 border border-gray-800"
-            >
-              Quitar auspiciador
-            </button>
-          </div>
-        )}
-
-        <p className="text-gray-600 text-xs mb-3">
-          Medida recomendada: 1200×275px, ya recortada en formato banner ancho — la imagen llena todo el espacio sin franjas negras.
-        </p>
-
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold"
-          style={{ background: '#22c55e20', color: '#22c55e' }}
-        >
-          {uploading ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <ImagePlus size={16} />}
-          {uploading ? 'Subiendo...' : (team.sponsor_url ? 'Cambiar imagen' : 'Subir imagen')}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }}
-        />
+          ) : categories.length === 0 ? (
+            <p className="text-gray-600 text-sm text-center py-8">Este club todavía no tiene categorías.</p>
+          ) : categories.map(cat => (
+            <div key={cat.id} className="py-3 border-b border-gray-800 last:border-0">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-white">{cat.name}</span>
+                {cat.sponsor_url && (
+                  <button onClick={() => handleRemove(cat)} className="text-gray-600 hover:text-red-400 shrink-0">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              {cat.sponsor_url && (
+                <div className="rounded-xl overflow-hidden border border-gray-700 bg-black mb-2" style={{ height: 80 }}>
+                  <img src={cat.sponsor_url} alt={`Auspiciador ${cat.name}`} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <button
+                onClick={() => fileRefs.current[cat.id]?.click()}
+                disabled={uploadingId === cat.id}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold"
+                style={{ background: '#22c55e20', color: '#22c55e' }}
+              >
+                {uploadingId === cat.id ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <ImagePlus size={14} />}
+                {uploadingId === cat.id ? 'Subiendo...' : (cat.sponsor_url ? 'Cambiar imagen' : 'Subir imagen')}
+              </button>
+              <input
+                ref={el => { fileRefs.current[cat.id] = el }}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(cat, f) }}
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
-// ── Super admin: apply one sponsor image to several clubs at once ─────────────
-function BulkSponsorSheet({ teams, onClose, onUpdated }: {
+// ── Super admin: apply one sponsor image to the same-named category across several clubs at once ──
+function BulkSponsorSheet({ teams, onClose }: {
   teams: Team[]
   onClose: () => void
-  onUpdated: (teamIds: string[], sponsorUrl: string) => void
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [categoryName, setCategoryName] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [applying, setApplying] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -122,16 +135,25 @@ function BulkSponsorSheet({ teams, onClose, onUpdated }: {
 
   async function handleApply() {
     if (!file) { toast.error('Elegí una imagen'); return }
+    if (!categoryName.trim()) { toast.error('Escribí el nombre de la categoría (ej: Senior)'); return }
     if (selected.size === 0) { toast.error('Elegí al menos un equipo'); return }
     setApplying(true)
     try {
-      // Upload once, reuse the same URL for every selected club
+      // Upload once, reuse the same URL for every matching category
       const url = await uploadTeamPhoto(file, `bulk-sponsors/${Date.now()}`)
       const ids = Array.from(selected)
-      const { error } = await supabase.from('teams').update({ sponsor_url: url }).in('id', ids)
+      const { data: matching, error: fetchError } = await supabase
+        .from('categories').select('id, team_id, name').in('team_id', ids).ilike('name', categoryName.trim())
+      if (fetchError) throw fetchError
+      if (!matching || matching.length === 0) {
+        toast.error(`Ningún club seleccionado tiene una categoría llamada "${categoryName.trim()}"`)
+        setApplying(false)
+        return
+      }
+      const { error } = await supabase.from('categories').update({ sponsor_url: url }).in('id', matching.map(c => c.id))
       if (error) throw error
-      onUpdated(ids, url)
-      toast.success(`Auspiciador aplicado a ${ids.length} club${ids.length !== 1 ? 'es' : ''}`)
+      const skipped = ids.length - new Set(matching.map(c => c.team_id)).size
+      toast.success(`Auspiciador aplicado a "${categoryName.trim()}" en ${matching.length} club${matching.length !== 1 ? 'es' : ''}` + (skipped > 0 ? ` (${skipped} sin esa categoría, omitidos)` : ''))
       onClose()
     } catch (err: any) {
       toast.error(err.message ?? 'No se pudo aplicar el auspiciador')
@@ -149,7 +171,9 @@ function BulkSponsorSheet({ teams, onClose, onUpdated }: {
           <h2 className="text-white font-bold text-lg">Auspiciador masivo</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
         </div>
-        <p className="text-gray-500 text-sm mb-4 shrink-0">Subí una imagen y aplicala a varios clubes a la vez.</p>
+        <p className="text-gray-500 text-sm mb-4 shrink-0">
+          Subí una imagen y aplicala a la categoría con este nombre (ej: "Senior") en varios clubes a la vez.
+        </p>
 
         <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4">
           {preview ? (
@@ -184,6 +208,16 @@ function BulkSponsorSheet({ teams, onClose, onUpdated }: {
               setPreview(URL.createObjectURL(f))
             }}
           />
+
+          <div className="shrink-0">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Categoría (nombre exacto)</p>
+            <input
+              value={categoryName}
+              onChange={e => setCategoryName(e.target.value)}
+              placeholder="Ej: Senior"
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none"
+            />
+          </div>
 
           <div className="shrink-0">
             <div className="flex items-center justify-between mb-2">
@@ -236,6 +270,68 @@ function BulkSponsorSheet({ teams, onClose, onUpdated }: {
   )
 }
 
+// ── Super admin: create new leagues to group clubs under ──────────────────────
+function LeagueManagerSheet({ leagues, onClose, onCreated }: {
+  leagues: League[]
+  onClose: () => void
+  onCreated: (league: League) => void
+}) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleCreate() {
+    const trimmed = name.trim()
+    if (!trimmed) { toast.error('Ingresá el nombre de la liga'); return }
+    setSaving(true)
+    const { data, error } = await supabase.from('leagues').insert({ name: trimmed }).select().single()
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    onCreated(data)
+    setName('')
+    toast.success('Liga creada')
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-lg bg-gray-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-700 p-6 pb-8 sm:pb-6 max-h-[85dvh] sm:max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <h2 className="text-white font-bold text-lg">Ligas</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
+        </div>
+        <p className="text-gray-500 text-sm mb-4 shrink-0">Agrupá los clubes por liga para verlos separados y armar rankings entre ellos.</p>
+
+        <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-1.5 mb-4">
+          {leagues.map(l => (
+            <div key={l.id} className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-800/50">
+              <Trophy size={14} className="text-amber-400 shrink-0" />
+              <span className="text-sm font-semibold text-white">{l.name}</span>
+            </div>
+          ))}
+          {leagues.length === 0 && (
+            <p className="text-gray-600 text-sm text-center py-6">Todavía no creaste ninguna liga.</p>
+          )}
+        </div>
+
+        <div className="flex gap-2 shrink-0">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
+            placeholder="Nombre de la nueva liga"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none min-w-0"
+          />
+          <Button loading={saving} onClick={handleCreate}>
+            <Plus size={15} /> Agregar
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function TeamsPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -249,6 +345,8 @@ export function TeamsPage() {
   const [deleting, setDeleting] = useState(false)
   const [sponsorTeam, setSponsorTeam] = useState<Team | null>(null)
   const [showBulkSponsor, setShowBulkSponsor] = useState(false)
+  const [leagues, setLeagues] = useState<League[]>([])
+  const [showLeagueManager, setShowLeagueManager] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -266,6 +364,9 @@ export function TeamsPage() {
 
       const platformAdmin = !!adminRow
       setIsPlatformAdmin(platformAdmin)
+
+      const { data: leagueRows } = await supabase.from('leagues').select('*').order('name')
+      setLeagues(leagueRows ?? [])
 
       if (platformAdmin) {
         // Platform admin sees every team on the platform
@@ -286,6 +387,50 @@ export function TeamsPage() {
 
   const showDemoCard = !teams.find(t => t.slug === 'maestros-fc')
   const showPlatformAdminUI = isPlatformAdmin || demoPlatformAdminPreview
+
+  function renderTeamCard(team: Team) {
+    return (
+      <Card
+        key={team.id}
+        onClick={() => navigate(`/team/${team.slug}`)}
+        className="flex items-center gap-4"
+      >
+        <div
+          className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl font-bold shrink-0"
+          style={{ background: team.primary_color + '26', color: team.primary_color }}
+        >
+          {team.logo_url ? (
+            <img src={team.logo_url} alt={team.name} className="w-12 h-12 rounded-xl object-cover" />
+          ) : (
+            team.name[0]
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="font-semibold text-white">{team.name}</p>
+          <p className="text-gray-500 text-sm truncate">/{team.slug}</p>
+        </div>
+        {showPlatformAdminUI && (
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            <button
+              onClick={e => { e.stopPropagation(); setSponsorTeam(team) }}
+              className="p-2 rounded-lg text-gray-600 hover:text-amber-400 hover:bg-amber-500/10"
+              aria-label="Auspiciador"
+            >
+              <Megaphone size={16} />
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); setTeamToDelete(team) }}
+              className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10"
+              aria-label="Eliminar equipo"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        )}
+        {!showPlatformAdminUI && <div className="ml-auto text-gray-600">›</div>}
+      </Card>
+    )
+  }
 
   async function confirmDeleteTeam() {
     if (!teamToDelete) return
@@ -319,17 +464,33 @@ export function TeamsPage() {
       </div>
 
       {showPlatformAdminUI && (
-        <div className="mb-6 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3">
-          <p className="text-amber-400 text-xs font-semibold">
+        <div className="mb-6 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30">
+          <p className="text-amber-400 text-xs font-semibold mb-2">
             👑 Sos administrador de la plataforma — ves y podés gestionar todos los clubes
           </p>
-          <button
-            onClick={() => setShowBulkSponsor(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0"
-            style={{ background: '#f59e0b20', color: '#f59e0b' }}
-          >
-            <Megaphone size={13} /> Auspiciadores
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowBulkSponsor(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0"
+              style={{ background: '#f59e0b20', color: '#f59e0b' }}
+            >
+              <Megaphone size={13} /> Auspiciadores
+            </button>
+            <button
+              onClick={() => setShowLeagueManager(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0"
+              style={{ background: '#3b82f620', color: '#3b82f6' }}
+            >
+              <Trophy size={13} /> Ligas
+            </button>
+            <button
+              onClick={() => navigate('/rankings')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0"
+              style={{ background: '#22c55e20', color: '#22c55e' }}
+            >
+              <BarChart3 size={13} /> Rankings
+            </button>
+          </div>
         </div>
       )}
 
@@ -354,47 +515,41 @@ export function TeamsPage() {
             </div>
           )}
 
-          {teams.map(team => (
-            <Card
-              key={team.id}
-              onClick={() => navigate(`/team/${team.slug}`)}
-              className="flex items-center gap-4"
-            >
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl font-bold shrink-0"
-                style={{ background: team.primary_color + '26', color: team.primary_color }}
-              >
-                {team.logo_url ? (
-                  <img src={team.logo_url} alt={team.name} className="w-12 h-12 rounded-xl object-cover" />
-                ) : (
-                  team.name[0]
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-white">{team.name}</p>
-                <p className="text-gray-500 text-sm truncate">/{team.slug}</p>
-              </div>
-              {showPlatformAdminUI && (
-                <div className="ml-auto flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={e => { e.stopPropagation(); setSponsorTeam(team) }}
-                    className="p-2 rounded-lg text-gray-600 hover:text-amber-400 hover:bg-amber-500/10"
-                    aria-label="Auspiciador"
-                  >
-                    <Megaphone size={16} />
-                  </button>
-                  <button
-                    onClick={e => { e.stopPropagation(); setTeamToDelete(team) }}
-                    className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10"
-                    aria-label="Eliminar equipo"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              )}
-              {!showPlatformAdminUI && <div className="ml-auto text-gray-600">›</div>}
-            </Card>
-          ))}
+          {showPlatformAdminUI ? (
+            <>
+              {leagues.map(league => {
+                const leagueTeams = teams.filter(t => t.league_id === league.id)
+                if (leagueTeams.length === 0) return null
+                return (
+                  <div key={league.id}>
+                    <div className="flex items-center gap-2 mb-2 mt-1">
+                      <Trophy size={13} className="text-blue-400" />
+                      <span className="text-xs font-black tracking-wider text-gray-400 uppercase">{league.name}</span>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {leagueTeams.map(renderTeamCard)}
+                    </div>
+                  </div>
+                )
+              })}
+              {(() => {
+                const unassigned = teams.filter(t => !t.league_id)
+                if (unassigned.length === 0) return null
+                return (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2 mt-1">
+                      <span className="text-xs font-black tracking-wider text-gray-500 uppercase">Sin liga asignada</span>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {unassigned.map(renderTeamCard)}
+                    </div>
+                  </div>
+                )
+              })()}
+            </>
+          ) : (
+            teams.map(renderTeamCard)
+          )}
 
           {/* Demo team shortcut — always visible if not already a real team */}
           {showDemoCard && (
@@ -449,23 +604,18 @@ export function TeamsPage() {
       )}
 
       {sponsorTeam && (
-        <TeamSponsorSheet
-          team={sponsorTeam}
-          onClose={() => setSponsorTeam(null)}
-          onUpdated={sponsorUrl => {
-            setTeams(prev => prev.map(t => t.id === sponsorTeam.id ? { ...t, sponsor_url: sponsorUrl } : t))
-            setSponsorTeam(prev => prev ? { ...prev, sponsor_url: sponsorUrl } : prev)
-          }}
-        />
+        <TeamSponsorSheet team={sponsorTeam} onClose={() => setSponsorTeam(null)} />
       )}
 
       {showBulkSponsor && (
-        <BulkSponsorSheet
-          teams={teams}
-          onClose={() => setShowBulkSponsor(false)}
-          onUpdated={(teamIds, sponsorUrl) => {
-            setTeams(prev => prev.map(t => teamIds.includes(t.id) ? { ...t, sponsor_url: sponsorUrl } : t))
-          }}
+        <BulkSponsorSheet teams={teams} onClose={() => setShowBulkSponsor(false)} />
+      )}
+
+      {showLeagueManager && (
+        <LeagueManagerSheet
+          leagues={leagues}
+          onClose={() => setShowLeagueManager(false)}
+          onCreated={league => setLeagues(prev => [...prev, league].sort((a, b) => a.name.localeCompare(b.name)))}
         />
       )}
     </div>
