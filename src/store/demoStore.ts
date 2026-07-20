@@ -79,11 +79,15 @@ const seed = {
   matchEventsByMatch: {} as Record<string, DemoMatchEvent[]>,
   postLikeCounts: {} as Record<string, number>,
   myLikedPostIds: [] as string[],
-  photos: Array.from({ length: 9 }, (_, i) => ({
+  photos: [
+    '1574629810360-7efbbe195018', '1517927033932-b3d18e61fb3a', '1522778119026-d647f0596c20',
+    '1543326727-cf6c39e8f84c', '1552667466-07770ae110d0', '1553778263-73a83bab9b0c',
+    '1579952363873-27f3bade9f55', '1560272564-c83b66b1ad12', '1614632537197-38a17061c2bd',
+  ].map((id, i) => ({
     id: `demo-ph-${i}`,
     team_id: 'mock-team-1',
     match_id: null,
-    url: `https://picsum.photos/seed/team${i}/600/600`,
+    url: `https://images.unsplash.com/photo-${id}?w=600&q=80&auto=format&fit=crop`,
     caption: `Foto ${i + 1}`,
     uploaded_by: 'mock-user-1',
     created_at: new Date().toISOString(),
