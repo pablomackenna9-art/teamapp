@@ -428,6 +428,20 @@ create policy "match_attendance_update" on public.match_attendance for update us
   is_team_member((select team_id from public.matches where id = match_id))
 );
 -- ============================================================
+-- TeamApp - Fix "chicken-and-egg" bug when creating a new team
+-- Problem: a user can INSERT a team, but the immediate SELECT-back
+-- (used by `.select().single()` in the app, and by any client using
+-- return=representation) requires is_team_member(id), which is false
+-- until the team_members row is created right after. This blocked
+-- ALL new team creation.
+-- Fix: also allow the creator to see their own just-created team.
+-- ============================================================
+
+drop policy if exists "teams_select" on public.teams;
+create policy "teams_select" on public.teams for select using (
+  is_team_member(id) or created_by = auth.uid()
+);
+-- ============================================================
 -- TeamApp - Platform super-admin + "coordinador" per-club role
 -- ============================================================
 
@@ -928,3 +942,45 @@ insert into public.leagues (name) values
 on conflict (name) do nothing;
 
 alter table public.teams add column if not exists league_id uuid references public.leagues on delete set null;
+-- ============================================================
+-- Fix: the platform_admins RLS policies referenced platform_admins
+-- itself via a plain subquery (exists (select 1 from platform_admins
+-- pa where pa.user_id = auth.uid())). Postgres re-applies RLS to that
+-- inner query too, which re-evaluates the same policy again, causing
+-- "infinite recursion detected in policy for relation platform_admins".
+-- The query then fails silently client-side (data comes back null,
+-- error is ignored), so the app always treated the real super admin
+-- as a regular user.
+--
+-- Fix: use the existing is_platform_admin() SECURITY DEFINER function
+-- instead, which bypasses RLS on its internal lookup and cannot recurse.
+-- ============================================================
+
+drop policy if exists "platform_admins_select" on public.platform_admins;
+create policy "platform_admins_select" on public.platform_admins for select using (
+  user_id = auth.uid() or public.is_platform_admin()
+);
+
+drop policy if exists "platform_admins_insert" on public.platform_admins;
+create policy "platform_admins_insert" on public.platform_admins for insert with check (
+  not exists (select 1 from public.platform_admins)
+  or public.is_platform_admin()
+);
+
+drop policy if exists "platform_admins_delete" on public.platform_admins;
+create policy "platform_admins_delete" on public.platform_admins for delete using (
+  public.is_platform_admin()
+);
+-- Run this SELECT and paste me the full result table
+select
+  schemaname,
+  tablename,
+  policyname,
+  permissive,
+  roles,
+  cmd,
+  qual,
+  with_check
+from pg_policies
+where tablename in ('teams', 'team_members')
+order by tablename, policyname;

@@ -303,106 +303,193 @@ function LigasTab({ leagues, onLeaguesChange }: { leagues: League[]; onLeaguesCh
   )
 }
 
-// ── AUSPICIADORES TAB ───────────────────────────────────────────────────────
-function AuspiciadoresTab({ teams }: { teams: Team[] }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<string | null>(null)
-  const [categoryName, setCategoryName] = useState('')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [applying, setApplying] = useState(false)
+// ── AUSPICIADORES TAB — navegar Liga → Categoría → Equipo ──────────────────
+const NO_LEAGUE = '__none__'
+const ALL_LEAGUES = '__all__'
+
+function CategorySponsorInlineRow({ team, category, onChanged }: {
+  team: Team; category: Category; onChanged: (updated: Category) => void
+}) {
+  const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  function toggleTeam(id: string) {
-    setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
-  }
-  function toggleAll() {
-    setSelected(prev => prev.size === teams.length ? new Set() : new Set(teams.map(t => t.id)))
+  async function handleUpload(file: File) {
+    if (!file.type.startsWith('image/')) { toast.error('Seleccioná una imagen'); return }
+    setUploading(true)
+    try {
+      const url = await uploadTeamPhoto(file, `${team.id}/sponsor-${category.id}`)
+      const { error } = await supabase.from('categories').update({ sponsor_url: url }).eq('id', category.id)
+      if (error) throw error
+      onChanged({ ...category, sponsor_url: url })
+      toast.success(`Auspiciador de ${team.name} · ${category.name} actualizado`)
+    } catch (err: any) {
+      toast.error(err.message ?? 'No se pudo subir el auspiciador')
+    }
+    setUploading(false)
   }
 
-  async function handleApply() {
-    if (!file) { toast.error('Elegí una imagen'); return }
-    if (!categoryName.trim()) { toast.error('Escribí el nombre de la categoría (ej: Senior)'); return }
-    if (selected.size === 0) { toast.error('Elegí al menos un equipo'); return }
-    setApplying(true)
+  async function handleRemove() {
+    const { error } = await supabase.from('categories').update({ sponsor_url: null }).eq('id', category.id)
+    if (error) { toast.error(error.message); return }
+    onChanged({ ...category, sponsor_url: null })
+    toast.success('Auspiciador quitado')
+  }
+
+  return (
+    <Card className="flex items-center gap-3">
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: team.primary_color + '26', color: team.primary_color }}>
+        {team.logo_url ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" /> : team.name[0]}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-white truncate">{team.name}</p>
+        <p className="text-gray-500 text-xs truncate">{category.name}</p>
+      </div>
+      {category.sponsor_url && (
+        <div className="rounded-lg overflow-hidden border border-gray-700 bg-black shrink-0" style={{ width: 72, height: 30 }}>
+          <img src={category.sponsor_url} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
+      <button
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className="p-2 rounded-lg text-gray-600 hover:text-amber-400 hover:bg-amber-500/10 shrink-0"
+        aria-label="Subir auspiciador"
+      >
+        {uploading ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" /> : <ImagePlus size={16} />}
+      </button>
+      {category.sponsor_url && (
+        <button onClick={handleRemove} className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 shrink-0" aria-label="Quitar auspiciador">
+          <Trash2 size={16} />
+        </button>
+      )}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
+    </Card>
+  )
+}
+
+function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
+  teams: Team[]; leagues: League[]; categories: Category[]; onCategoriesChange: (categories: Category[]) => void
+}) {
+  const [selectedLeague, setSelectedLeague] = useState<string>(ALL_LEAGUES)
+  const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null)
+  const [bulkFile, setBulkFile] = useState<File | null>(null)
+  const [bulkPreview, setBulkPreview] = useState<string | null>(null)
+  const [applyingBulk, setApplyingBulk] = useState(false)
+  const bulkFileRef = useRef<HTMLInputElement>(null)
+
+  const teamById = new Map(teams.map(t => [t.id, t]))
+
+  const teamsInLeague = teams.filter(t => {
+    if (selectedLeague === ALL_LEAGUES) return true
+    if (selectedLeague === NO_LEAGUE) return !t.league_id
+    return t.league_id === selectedLeague
+  })
+  const teamIdsInLeague = new Set(teamsInLeague.map(t => t.id))
+
+  const categoryNamesInLeague = Array.from(
+    new Set(categories.filter(c => teamIdsInLeague.has(c.team_id)).map(c => c.name))
+  ).sort((a, b) => a.localeCompare(b))
+
+  const matchingCategories = selectedCategoryName
+    ? categories.filter(c => teamIdsInLeague.has(c.team_id) && c.name === selectedCategoryName)
+    : []
+
+  function updateCategory(updated: Category) {
+    onCategoriesChange(categories.map(c => c.id === updated.id ? updated : c))
+  }
+
+  async function handleBulkApply() {
+    if (!bulkFile) { toast.error('Elegí una imagen'); return }
+    if (matchingCategories.length === 0) return
+    setApplyingBulk(true)
     try {
-      const url = await uploadTeamPhoto(file, `bulk-sponsors/${Date.now()}`)
-      const ids = Array.from(selected)
-      const { data: matching, error: fetchError } = await supabase
-        .from('categories').select('id, team_id, name').in('team_id', ids).ilike('name', categoryName.trim())
-      if (fetchError) throw fetchError
-      if (!matching || matching.length === 0) {
-        toast.error(`Ningún club seleccionado tiene una categoría llamada "${categoryName.trim()}"`)
-        setApplying(false)
-        return
-      }
-      const { error } = await supabase.from('categories').update({ sponsor_url: url }).in('id', matching.map(c => c.id))
+      const url = await uploadTeamPhoto(bulkFile, `bulk-sponsors/${Date.now()}`)
+      const ids = matchingCategories.map(c => c.id)
+      const { error } = await supabase.from('categories').update({ sponsor_url: url }).in('id', ids)
       if (error) throw error
-      const skipped = ids.length - new Set(matching.map(c => c.team_id)).size
-      toast.success(`Auspiciador aplicado a "${categoryName.trim()}" en ${matching.length} club${matching.length !== 1 ? 'es' : ''}` + (skipped > 0 ? ` (${skipped} sin esa categoría, omitidos)` : ''))
-      setFile(null); setPreview(null); setCategoryName(''); setSelected(new Set())
+      onCategoriesChange(categories.map(c => ids.includes(c.id) ? { ...c, sponsor_url: url } : c))
+      toast.success(`Auspiciador aplicado a "${selectedCategoryName}" en ${ids.length} club${ids.length !== 1 ? 'es' : ''}`)
+      setBulkFile(null); setBulkPreview(null)
     } catch (err: any) {
       toast.error(err.message ?? 'No se pudo aplicar el auspiciador')
     }
-    setApplying(false)
+    setApplyingBulk(false)
   }
+
+  const leagueOptions = [
+    { key: ALL_LEAGUES, label: 'Todas las ligas' },
+    ...leagues.map(l => ({ key: l.id, label: l.name })),
+    { key: NO_LEAGUE, label: 'Sin liga' },
+  ]
 
   return (
     <div>
       <p className="text-gray-400 text-sm mb-4">
-        Subí una imagen y aplicala a la categoría con este nombre (ej: "Senior") en varios clubes a la vez. Para un solo club, usá el ícono de auspiciador en la pestaña Equipos.
+        Elegí una liga y una categoría para ver y editar el auspiciador de cada club — si un club tiene varias categorías (ej. Boedo con Senior, Reserva, Femenino), cada una aparece por separado.
       </p>
 
-      {preview ? (
-        <div className="relative rounded-2xl overflow-hidden border-2 border-gray-700 bg-black mb-4" style={{ height: 100 }}>
-          <img src={preview} alt="Auspiciador" className="w-full h-full object-cover" />
-          <button onClick={() => { setFile(null); setPreview(null) }} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 flex items-center justify-center text-white"><X size={14} /></button>
-        </div>
+      <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
+        {leagueOptions.map(opt => (
+          <button
+            key={opt.key}
+            onClick={() => { setSelectedLeague(opt.key); setSelectedCategoryName(null) }}
+            className="shrink-0 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
+            style={selectedLeague === opt.key ? { background: '#3b82f6', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {categoryNamesInLeague.length === 0 ? (
+        <p className="text-gray-600 text-sm text-center py-8">No hay categorías cargadas para esta liga todavía.</p>
       ) : (
-        <button onClick={() => fileRef.current?.click()} className="flex flex-col items-center justify-center gap-2 py-6 w-full rounded-2xl border border-dashed border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 mb-4">
-          <ImagePlus size={22} />
-          <span className="text-xs font-semibold">Elegí una imagen</span>
-          <span className="text-[11px] text-gray-600">Recomendado: 1200×275px, banner ancho ya recortado</span>
-        </button>
-      )}
-      <input ref={fileRef} type="file" accept="image/*" className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (!f) return; setFile(f); setPreview(URL.createObjectURL(f)) }} />
-
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Categoría (nombre exacto)</p>
-      <input
-        value={categoryName}
-        onChange={e => setCategoryName(e.target.value)}
-        placeholder="Ej: Senior"
-        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none mb-4"
-      />
-
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Elegí los clubes</p>
-        <button onClick={toggleAll} className="text-xs font-semibold" style={{ color: '#22c55e' }}>
-          {selected.size === teams.length ? 'Ninguno' : 'Todos'}
-        </button>
-      </div>
-      <div className="flex flex-col gap-1.5 mb-4">
-        {teams.map(team => {
-          const isSelected = selected.has(team.id)
-          return (
-            <button key={team.id} onClick={() => toggleTeam(team.id)} className="flex items-center gap-3 p-2.5 rounded-xl border text-left transition-all"
-              style={isSelected ? { background: '#22c55e20', borderColor: '#22c55e' } : { background: '#111827', borderColor: '#1f2937' }}>
-              <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border-2" style={isSelected ? { background: '#22c55e', borderColor: '#22c55e' } : { borderColor: '#374151' }}>
-                {isSelected && <Check size={13} color="#030712" />}
-              </div>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: team.primary_color + '26', color: team.primary_color }}>
-                {team.logo_url ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" /> : team.name[0]}
-              </div>
-              <span className="text-sm font-semibold text-white truncate">{team.name}</span>
+        <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar">
+          {categoryNamesInLeague.map(name => (
+            <button
+              key={name}
+              onClick={() => setSelectedCategoryName(name)}
+              className="shrink-0 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
+              style={selectedCategoryName === name ? { background: '#22c55e', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+            >
+              {name}
             </button>
-          )
-        })}
-        {teams.length === 0 && <p className="text-gray-600 text-sm text-center py-4">No hay clubes reales todavía.</p>}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <Button fullWidth loading={applying} onClick={handleApply}>
-        Aplicar a {selected.size} club{selected.size !== 1 ? 'es' : ''}
-      </Button>
+      {selectedCategoryName && matchingCategories.length > 0 && (
+        <div className="rounded-2xl border border-dashed border-gray-700 p-4 mb-5">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+            Aplicar la misma imagen a los {matchingCategories.length} club{matchingCategories.length !== 1 ? 'es' : ''} de "{selectedCategoryName}" en esta liga
+          </p>
+          {bulkPreview ? (
+            <div className="relative rounded-xl overflow-hidden border-2 border-gray-700 bg-black mb-3" style={{ height: 80 }}>
+              <img src={bulkPreview} alt="" className="w-full h-full object-cover" />
+              <button onClick={() => { setBulkFile(null); setBulkPreview(null) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-white"><X size={12} /></button>
+            </div>
+          ) : (
+            <button onClick={() => bulkFileRef.current?.click()} className="flex items-center justify-center gap-2 py-3 w-full rounded-xl border border-dashed border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 mb-3">
+              <ImagePlus size={16} /><span className="text-xs font-semibold">Elegí una imagen</span>
+            </button>
+          )}
+          <input ref={bulkFileRef} type="file" accept="image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (!f) return; setBulkFile(f); setBulkPreview(URL.createObjectURL(f)) }} />
+          <Button fullWidth size="sm" loading={applyingBulk} onClick={handleBulkApply}>Aplicar a todos</Button>
+        </div>
+      )}
+
+      {selectedCategoryName ? (
+        <div className="flex flex-col gap-2">
+          {matchingCategories.map(cat => {
+            const team = teamById.get(cat.team_id)
+            if (!team) return null
+            return <CategorySponsorInlineRow key={cat.id} team={team} category={cat} onChanged={updateCategory} />
+          })}
+        </div>
+      ) : categoryNamesInLeague.length > 0 ? (
+        <p className="text-gray-600 text-sm text-center py-6">Elegí una categoría arriba para ver los clubes.</p>
+      ) : null}
     </div>
   )
 }
@@ -415,6 +502,7 @@ export function AdminPanelPage() {
   const [tab, setTab] = useState<Tab>('equipos')
   const [teams, setTeams] = useState<Team[]>([])
   const [leagues, setLeagues] = useState<League[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [loadingTeams, setLoadingTeams] = useState(true)
 
   useEffect(() => {
@@ -432,6 +520,12 @@ export function AdminPanelPage() {
       setTeams(teamRows ?? [])
       setLeagues(leagueRows ?? [])
       setLoadingTeams(false)
+
+      const teamIds = (teamRows ?? []).map(t => t.id)
+      if (teamIds.length > 0) {
+        const { data: catRows } = await supabase.from('categories').select('*').in('team_id', teamIds).order('name')
+        setCategories(catRows ?? [])
+      }
     }
     init()
   }, [user])
@@ -478,7 +572,7 @@ export function AdminPanelPage() {
 
       {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} loading={loadingTeams} onTeamsChange={setTeams} />}
       {tab === 'ligas' && <LigasTab leagues={leagues} onLeaguesChange={setLeagues} />}
-      {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} />}
+      {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
       {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
     </div>
   )
