@@ -49,12 +49,12 @@ function RankingList({ icon: Icon, color, title, rows, unit }: {
   )
 }
 
-export function RankingsPage() {
+export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embedded?: boolean; leagues?: League[] } = {}) {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const [checked, setChecked] = useState(false)
-  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
-  const [leagues, setLeagues] = useState<League[]>([])
+  const [checked, setChecked] = useState(embedded)
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(embedded)
+  const [leagues, setLeagues] = useState<League[]>(leaguesProp ?? [])
   const [leagueId, setLeagueId] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [scorers, setScorers] = useState<PlayerTally[]>([])
@@ -63,6 +63,11 @@ export function RankingsPage() {
   const [teamRanking, setTeamRanking] = useState<TeamTally[]>([])
 
   useEffect(() => {
+    if (embedded) {
+      setLeagues(leaguesProp ?? [])
+      if (leaguesProp && leaguesProp.length > 0 && !leagueId) setLeagueId(leaguesProp[0].id)
+      return
+    }
     async function init() {
       if (!user) { setChecked(true); return }
       const { data: adminRow } = await supabase.from('platform_admins').select('user_id').eq('user_id', user.id).maybeSingle()
@@ -73,7 +78,8 @@ export function RankingsPage() {
       setChecked(true)
     }
     init()
-  }, [user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, embedded])
 
   useEffect(() => {
     if (!leagueId) return
@@ -162,19 +168,21 @@ export function RankingsPage() {
   }
 
   return (
-    <div className="max-w-lg mx-auto px-4 pt-8 pb-10">
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={() => navigate('/teams')} className="text-gray-400 hover:text-white shrink-0">
-          <ChevronLeft size={24} />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold text-white">Rankings de la liga</h1>
-          <p className="text-gray-500 text-sm">Goleadores, asistidores, MVPs y mejores equipos entre clubes</p>
+    <div className={embedded ? '' : 'max-w-lg mx-auto px-4 pt-8 pb-10'}>
+      {!embedded && (
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={() => navigate('/teams')} className="text-gray-400 hover:text-white shrink-0">
+            <ChevronLeft size={24} />
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-white">Rankings de la liga</h1>
+            <p className="text-gray-500 text-sm">Goleadores, asistidores, MVPs y mejores equipos entre clubes</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {leagues.length === 0 ? (
-        <EmptyState icon={<Trophy size={40} />} title="No hay ligas creadas" description="Creá una liga primero desde 'Todos los equipos'." />
+        <EmptyState icon={<Trophy size={40} />} title="No hay ligas creadas" description="Creá una liga primero en la pestaña Ligas." />
       ) : (
         <>
           <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar">

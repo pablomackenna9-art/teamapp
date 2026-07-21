@@ -21,6 +21,7 @@ import { MorePage } from '@/pages/more/MorePage'
 import { LineupPage } from '@/pages/matches/LineupPage'
 import { FixturePage } from '@/pages/fixture/FixturePage'
 import { RankingsPage } from '@/pages/rankings/RankingsPage'
+import { AdminPanelPage } from '@/pages/admin/AdminPanelPage'
 
 export const router = createBrowserRouter([
   {
@@ -38,6 +39,7 @@ export const router = createBrowserRouter([
       { path: 'teams', element: <TeamsPage /> },
       { path: 'teams/new', element: <NewTeamPage /> },
       { path: 'rankings', element: <RankingsPage /> },
+      { path: 'admin', element: <AdminPanelPage /> },
       {
         path: 'team/:slug',
         element: <TeamLayout />,
