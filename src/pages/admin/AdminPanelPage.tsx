@@ -750,15 +750,21 @@ function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
 }) {
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [admins, setAdmins] = useState<PlatformAdminRow[]>([])
+  const [pendingInvites, setPendingInvites] = useState<{ email: string; created_at: string }[]>([])
   const [loadingAdmins, setLoadingAdmins] = useState(true)
   const [email, setEmail] = useState('')
   const [granting, setGranting] = useState(false)
 
   async function loadAdmins() {
     setLoadingAdmins(true)
-    const { data, error } = await supabase.rpc('admin_list_platform_admins')
-    if (error) { toast.error(error.message); setLoadingAdmins(false); return }
+    const [{ data, error }, { data: inviteData, error: inviteError }] = await Promise.all([
+      supabase.rpc('admin_list_platform_admins'),
+      supabase.rpc('admin_list_pending_admin_invites'),
+    ])
+    if (error) toast.error(error.message)
+    if (inviteError) toast.error(inviteError.message)
     setAdmins(data ?? [])
+    setPendingInvites(inviteData ?? [])
     setLoadingAdmins(false)
   }
 
@@ -768,13 +774,24 @@ function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
     const trimmed = email.trim()
     if (!trimmed) { toast.error('Ingresá el email del usuario'); return }
     setGranting(true)
-    const { error } = await supabase.rpc('admin_grant_platform_admin', { p_email: trimmed })
+    const { data, error } = await supabase.rpc('admin_grant_platform_admin', { p_email: trimmed })
     setGranting(false)
     if (error) { toast.error(error.message); return }
-    toast.success(`${trimmed} ahora es administrador de la plataforma`)
+    if (data === 'invited') {
+      toast.success(`${trimmed} todavía no tiene cuenta — va a ser administrador apenas se registre con ese mail`)
+    } else {
+      toast.success(`${trimmed} ahora es administrador de la plataforma`)
+      onRowsChange(rows.map(r => r.email.toLowerCase() === trimmed.toLowerCase() ? { ...r, is_platform_admin: true } : r))
+    }
     setEmail('')
     loadAdmins()
-    onRowsChange(rows.map(r => r.email.toLowerCase() === trimmed.toLowerCase() ? { ...r, is_platform_admin: true } : r))
+  }
+
+  async function handleCancelInvite(inviteEmail: string) {
+    const { error } = await supabase.rpc('admin_cancel_platform_admin_invite', { p_email: inviteEmail })
+    if (error) { toast.error(error.message); return }
+    toast.success('Invitación cancelada')
+    loadAdmins()
   }
 
   async function handleRevokeAdmin(row: PlatformAdminRow) {
@@ -833,6 +850,7 @@ function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
           />
           <Button loading={granting} onClick={handleGrantAdmin}><Plus size={15} /> Dar acceso</Button>
         </div>
+        <p className="text-gray-600 text-xs mb-3">Si todavía no tiene cuenta, queda pendiente y se activa apenas se registre con ese mail.</p>
         {loadingAdmins ? (
           <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
         ) : (
@@ -846,6 +864,15 @@ function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
                     <Trash2 size={14} />
                   </button>
                 )}
+              </div>
+            ))}
+            {pendingInvites.map(inv => (
+              <div key={inv.email} className="flex items-center gap-2 py-1.5">
+                <ShieldCheck size={14} className="text-amber-400 shrink-0" />
+                <span className="text-sm text-gray-300 flex-1 truncate">{inv.email} <span className="text-amber-400 text-xs">(pendiente — sin cuenta todavía)</span></span>
+                <button onClick={() => handleCancelInvite(inv.email)} className="text-gray-600 hover:text-red-400 shrink-0" aria-label="Cancelar invitación">
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
           </div>
