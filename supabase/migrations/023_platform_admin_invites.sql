@@ -17,7 +17,10 @@ create policy "platform_admin_invites_all" on public.platform_admin_invites for 
 
 -- Now grants immediately if the user already exists, otherwise queues an
 -- invite instead of raising. Returns 'granted' or 'invited' so the UI can
--- show the right message.
+-- show the right message. Return type changed from void, so the old
+-- function must be dropped first (CREATE OR REPLACE can't do that).
+drop function if exists public.admin_grant_platform_admin(text);
+
 create or replace function public.admin_grant_platform_admin(p_email text)
 returns text language plpgsql security definer set search_path = public as $$
 declare
