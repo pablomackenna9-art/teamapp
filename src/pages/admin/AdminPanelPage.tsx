@@ -551,94 +551,131 @@ function DashboardTab({ teams, leagues, categories, onGoTo }: {
   )
 }
 
-// ── USUARIOS TAB — otorgar/quitar acceso de administrador de plataforma ────
-interface PlatformAdminRow { user_id: string; email: string; created_at: string }
+// ── USUARIOS TAB — todos los usuarios, con rol/liga/categoría y acceso admin ─
+interface UserRow {
+  user_id: string
+  email: string
+  full_name: string
+  team_id: string
+  team_name: string
+  league_name: string | null
+  category_name: string | null
+  position: string | null
+  role: string
+  is_platform_admin: boolean
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  player: 'Jugador',
+  dt: 'DT',
+  coordinador: 'Coordinador',
+  admin: 'Admin de club',
+  captain: 'Capitán',
+}
+const ROLE_OPTIONS = ['player', 'dt', 'coordinador', 'admin', 'captain']
 
 function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
-  const [admins, setAdmins] = useState<PlatformAdminRow[]>([])
+  const [rows, setRows] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [email, setEmail] = useState('')
-  const [granting, setGranting] = useState(false)
-  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.rpc('admin_list_platform_admins')
+    const { data, error } = await supabase.rpc('admin_list_users')
     if (error) { toast.error(error.message); setLoading(false); return }
-    setAdmins(data ?? [])
+    setRows(data ?? [])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
-  async function handleGrant() {
-    const trimmed = email.trim()
-    if (!trimmed) { toast.error('Ingresá el email del usuario'); return }
-    setGranting(true)
-    const { error } = await supabase.rpc('admin_grant_platform_admin', { p_email: trimmed })
-    setGranting(false)
+  async function handleRoleChange(row: UserRow, role: string) {
+    const key = `${row.team_id}-${row.user_id}`
+    setSavingKey(key)
+    const { error } = await supabase.rpc('admin_set_team_member_role', { p_team_id: row.team_id, p_user_id: row.user_id, p_role: role })
+    setSavingKey(null)
     if (error) { toast.error(error.message); return }
-    toast.success(`${trimmed} ahora es administrador de la plataforma`)
-    setEmail('')
-    load()
+    setRows(prev => prev.map(r => (r.team_id === row.team_id && r.user_id === row.user_id) ? { ...r, role } : r))
+    toast.success('Rol actualizado')
   }
 
-  async function handleRevoke(row: PlatformAdminRow) {
-    if (!window.confirm(`¿Quitar acceso de administrador a ${row.email}?`)) return
-    setRevokingId(row.user_id)
-    const { error } = await supabase.rpc('admin_revoke_platform_admin', { p_user_id: row.user_id })
-    setRevokingId(null)
-    if (error) { toast.error(error.message); return }
-    toast.success('Acceso quitado')
-    load()
+  async function handleTogglePlatformAdmin(row: UserRow) {
+    if (row.is_platform_admin) {
+      if (row.user_id === currentUserId) { toast.error('No podés quitarte tu propio acceso'); return }
+      if (!window.confirm(`¿Quitar acceso de administrador de plataforma a ${row.email}?`)) return
+      const { error } = await supabase.rpc('admin_revoke_platform_admin', { p_user_id: row.user_id })
+      if (error) { toast.error(error.message); return }
+      toast.success('Acceso quitado')
+    } else {
+      const { error } = await supabase.rpc('admin_grant_platform_admin', { p_email: row.email })
+      if (error) { toast.error(error.message); return }
+      toast.success(`${row.email} ahora es administrador de la plataforma`)
+    }
+    setRows(prev => prev.map(r => r.user_id === row.user_id ? { ...r, is_platform_admin: !row.is_platform_admin } : r))
+  }
+
+  if (loading) {
+    return <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
   }
 
   return (
     <div>
       <p className="text-gray-400 text-sm mb-4">
-        Los administradores de la plataforma ven y gestionan todos los clubes, ligas, auspiciadores y rankings.
+        Todas las personas registradas en algún club — su rol, liga, categoría y si tienen acceso de administrador de la plataforma. Una persona puede aparecer más de una vez si juega en más de un club.
       </p>
 
-      <div className="flex gap-2 mb-5">
-        <input
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') handleGrant() }}
-          placeholder="Email del usuario ya registrado"
-          type="email"
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none min-w-0"
-        />
-        <Button loading={granting} onClick={handleGrant}><Plus size={15} /> Dar acceso</Button>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
+      {rows.length === 0 ? (
+        <p className="text-gray-600 text-sm text-center py-8">Todavía no hay usuarios en ningún club.</p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {admins.map(a => (
-            <Card key={a.user_id} className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#22c55e26', color: '#22c55e' }}>
-                <ShieldCheck size={16} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-white truncate">{a.email}</p>
-                <p className="text-gray-500 text-xs">
-                  Admin desde {new Date(a.created_at).toLocaleDateString('es-CL')}
-                  {a.user_id === currentUserId && ' · vos'}
-                </p>
-              </div>
-              {a.user_id !== currentUserId && (
-                <button
-                  onClick={() => handleRevoke(a)}
-                  disabled={revokingId === a.user_id}
-                  className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 shrink-0"
-                  aria-label="Quitar acceso"
-                >
-                  <Trash2 size={16} />
-                </button>
-              )}
-            </Card>
-          ))}
+        <div className="overflow-x-auto -mx-4 md:mx-0">
+          <table className="w-full text-sm min-w-[820px]">
+            <thead>
+              <tr className="text-left text-gray-500 text-xs uppercase tracking-wider border-b border-gray-800">
+                <th className="px-4 md:px-3 py-2 font-bold">Nombre</th>
+                <th className="px-3 py-2 font-bold">Mail</th>
+                <th className="px-3 py-2 font-bold">Club</th>
+                <th className="px-3 py-2 font-bold">Liga</th>
+                <th className="px-3 py-2 font-bold">Categoría</th>
+                <th className="px-3 py-2 font-bold">Posición</th>
+                <th className="px-3 py-2 font-bold">Tipo de usuario</th>
+                <th className="px-3 py-2 font-bold">Administrador</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const key = `${row.team_id}-${row.user_id}`
+                return (
+                  <tr key={key} className="border-b border-gray-800/50">
+                    <td className="px-4 md:px-3 py-2.5 text-white font-semibold whitespace-nowrap">{row.full_name || '—'}</td>
+                    <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.email}</td>
+                    <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.team_name}</td>
+                    <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.league_name ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.category_name ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.position ?? '—'}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <select
+                        value={row.role}
+                        disabled={savingKey === key}
+                        onChange={e => handleRoleChange(row, e.target.value)}
+                        className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
+                      >
+                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <button
+                        onClick={() => handleTogglePlatformAdmin(row)}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold"
+                        style={row.is_platform_admin ? { background: '#22c55e20', color: '#22c55e' } : { background: '#1f2937', color: '#6b7280' }}
+                      >
+                        <ShieldCheck size={12} /> {row.is_platform_admin ? 'Sí' : 'No'}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
