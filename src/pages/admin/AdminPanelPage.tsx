@@ -164,15 +164,98 @@ function AssignLeagueSheet({ team, leagues, onClose, onAssigned }: {
   )
 }
 
+// ── Add/remove one or more coordinadores for a club ────────────────────────
+function CoordinadorSheet({ team, userRows, onClose, onChanged }: {
+  team: Team; userRows: UserRow[]; onClose: () => void; onChanged: () => void
+}) {
+  const [email, setEmail] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null)
+  const coordinadores = userRows.filter(r => r.team_id === team.id && r.role === 'coordinador')
+
+  async function handleAdd() {
+    const trimmed = email.trim()
+    if (!trimmed) { toast.error('Ingresá el email'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('admin_set_team_coordinador', { p_team_id: team.id, p_email: trimmed })
+    if (error) {
+      if (error.message.includes('No existe un usuario registrado')) {
+        // Not signed up yet — queue an invite; claim_invites() applies it on their first login.
+        const { error: inviteError } = await supabase.from('team_invites').insert({ team_id: team.id, email: trimmed, role: 'coordinador' })
+        setSaving(false)
+        if (inviteError) { toast.error(inviteError.message); return }
+        toast.success(`Invitación enviada — ${trimmed} será coordinador cuando entre por primera vez`)
+        setEmail('')
+        onChanged()
+        return
+      }
+      setSaving(false)
+      toast.error(error.message)
+      return
+    }
+    setSaving(false)
+    toast.success(`${trimmed} ahora es coordinador de ${team.name}`)
+    setEmail('')
+    onChanged()
+  }
+
+  async function handleRemove(userId: string) {
+    setRemovingUserId(userId)
+    const { error } = await supabase.from('team_members').delete().eq('team_id', team.id).eq('user_id', userId)
+    setRemovingUserId(null)
+    if (error) { toast.error(error.message); return }
+    toast.success('Coordinador quitado')
+    onChanged()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-lg bg-gray-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-700 p-6 pb-8 sm:pb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-white font-bold text-lg">Coordinadores de {team.name}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
+        </div>
+        <p className="text-gray-500 text-sm mb-4">Podés asignar más de un coordinador al mismo club.</p>
+
+        <div className="flex flex-col gap-1.5 mb-4">
+          {coordinadores.length === 0 && <p className="text-gray-600 text-sm text-center py-4">Sin coordinador asignado todavía.</p>}
+          {coordinadores.map(c => (
+            <div key={c.user_id} className="flex items-center gap-2 py-2 px-3 rounded-xl" style={{ background: '#111827' }}>
+              <span className="text-sm text-white flex-1 truncate">{c.full_name || c.email}</span>
+              <button onClick={() => handleRemove(c.user_id)} disabled={removingUserId === c.user_id} className="text-gray-600 hover:text-red-400 shrink-0" aria-label="Quitar coordinador">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+            placeholder="coordinador@email.com"
+            type="email"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none min-w-0"
+          />
+          <Button loading={saving} onClick={handleAdd}><Plus size={15} /> Agregar</Button>
+        </div>
+        <p className="text-gray-600 text-xs mt-2">Si la persona todavía no se registró, va a tener acceso de coordinador apenas entre por primera vez con ese mail.</p>
+      </div>
+    </div>
+  )
+}
+
 // ── EQUIPOS TAB ─────────────────────────────────────────────────────────────
-function EquiposTab({ teams, leagues, userRows, loading, onTeamsChange }: {
-  teams: Team[]; leagues: League[]; userRows: UserRow[]; loading: boolean; onTeamsChange: (teams: Team[]) => void
+function EquiposTab({ teams, leagues, userRows, loading, onTeamsChange, onRefreshUsers }: {
+  teams: Team[]; leagues: League[]; userRows: UserRow[]; loading: boolean; onTeamsChange: (teams: Team[]) => void; onRefreshUsers: () => void
 }) {
   const navigate = useNavigate()
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [sponsorTeam, setSponsorTeam] = useState<Team | null>(null)
   const [leagueTeam, setLeagueTeam] = useState<Team | null>(null)
+  const [coordinadorTeam, setCoordinadorTeam] = useState<Team | null>(null)
 
   async function confirmDeleteTeam() {
     if (!teamToDelete) return
@@ -203,6 +286,9 @@ function EquiposTab({ teams, leagues, userRows, loading, onTeamsChange }: {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-1 shrink-0">
+          <button onClick={e => { e.stopPropagation(); setCoordinadorTeam(team) }} className="p-2 rounded-lg text-gray-600 hover:text-purple-400 hover:bg-purple-500/10" aria-label="Coordinador">
+            <UserCog size={16} />
+          </button>
           <button onClick={e => { e.stopPropagation(); setLeagueTeam(team) }} className="p-2 rounded-lg text-gray-600 hover:text-blue-400 hover:bg-blue-500/10" aria-label="Liga">
             <Trophy size={16} />
           </button>
@@ -282,6 +368,14 @@ function EquiposTab({ teams, leagues, userRows, loading, onTeamsChange }: {
           leagues={leagues}
           onClose={() => setLeagueTeam(null)}
           onAssigned={leagueId => onTeamsChange(teams.map(t => t.id === leagueTeam.id ? { ...t, league_id: leagueId } : t))}
+        />
+      )}
+      {coordinadorTeam && (
+        <CoordinadorSheet
+          team={coordinadorTeam}
+          userRows={userRows}
+          onClose={() => setCoordinadorTeam(null)}
+          onChanged={onRefreshUsers}
         />
       )}
     </div>
@@ -452,7 +546,11 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
     if (selectedCategoryIds.size === 0) { toast.error('Marcá al menos un club/categoría de la lista'); return }
     setApplyingBulk(true)
     try {
-      const url = await uploadTeamPhoto(bulkFile, `bulk-sponsors/${Date.now()}`)
+      // Storage RLS reads the first path segment as a team_id uuid, so this
+      // must live under some real team's folder — any team works since a
+      // platform admin passes is_team_admin() for every team.
+      const anyTeamId = matchingCategories.find(c => selectedCategoryIds.has(c.id))?.team_id ?? teams[0]?.id
+      const url = await uploadTeamPhoto(bulkFile, `${anyTeamId}/bulk-sponsor-${Date.now()}`)
       const ids = Array.from(selectedCategoryIds)
       const { error } = await supabase.from('categories').update({ sponsor_url: url }).in('id', ids)
       if (error) throw error
@@ -856,6 +954,12 @@ export function AdminPanelPage() {
     init()
   }, [user])
 
+  async function refreshUserRows() {
+    const { data, error } = await supabase.rpc('admin_list_users')
+    if (error) { toast.error(error.message); return }
+    setUserRows(data ?? [])
+  }
+
   async function handleSignOut() {
     await signOut()
     navigate('/login')
@@ -950,7 +1054,7 @@ export function AdminPanelPage() {
         <h1 className="text-2xl font-bold text-white mb-1 md:hidden">{currentLabel}</h1>
 
         {tab === 'dashboard' && <DashboardTab teams={teams} leagues={leagues} categories={categories} onGoTo={setTab} />}
-        {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} userRows={userRows} loading={loadingTeams} onTeamsChange={setTeams} />}
+        {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} userRows={userRows} loading={loadingTeams} onTeamsChange={setTeams} onRefreshUsers={refreshUserRows} />}
         {tab === 'ligas' && <LigasTab leagues={leagues} onLeaguesChange={setLeagues} />}
         {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
         {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
