@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3, LayoutDashboard, UserCog, ShieldCheck } from 'lucide-react'
+import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3, LayoutDashboard, UserCog, ShieldCheck, LogOut } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -12,6 +12,28 @@ import { RankingsPage } from '@/pages/rankings/RankingsPage'
 import type { Team, Category, League } from '@/types'
 
 type Tab = 'dashboard' | 'equipos' | 'ligas' | 'auspiciadores' | 'rankings' | 'usuarios'
+
+interface UserRow {
+  user_id: string
+  email: string
+  full_name: string
+  team_id: string
+  team_name: string
+  league_name: string | null
+  category_name: string | null
+  player_position: string | null
+  role: string
+  is_platform_admin: boolean
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  player: 'Jugador',
+  dt: 'DT',
+  coordinador: 'Coordinador',
+  admin: 'Admin de club',
+  captain: 'Capitán',
+}
+const ROLE_OPTIONS = ['player', 'dt', 'coordinador', 'admin', 'captain']
 
 // ── Manage a specific club's per-category sponsors without entering it ────────
 function TeamSponsorSheet({ team, onClose }: { team: Team; onClose: () => void }) {
@@ -143,8 +165,8 @@ function AssignLeagueSheet({ team, leagues, onClose, onAssigned }: {
 }
 
 // ── EQUIPOS TAB ─────────────────────────────────────────────────────────────
-function EquiposTab({ teams, leagues, loading, onTeamsChange }: {
-  teams: Team[]; leagues: League[]; loading: boolean; onTeamsChange: (teams: Team[]) => void
+function EquiposTab({ teams, leagues, userRows, loading, onTeamsChange }: {
+  teams: Team[]; leagues: League[]; userRows: UserRow[]; loading: boolean; onTeamsChange: (teams: Team[]) => void
 }) {
   const navigate = useNavigate()
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null)
@@ -164,6 +186,7 @@ function EquiposTab({ teams, leagues, loading, onTeamsChange }: {
   }
 
   function renderTeamCard(team: Team) {
+    const coordinadores = userRows.filter(r => r.team_id === team.id && r.role === 'coordinador')
     return (
       <Card key={team.id} onClick={() => navigate(`/team/${team.slug}`)} className="flex items-center gap-4">
         <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl font-bold shrink-0"
@@ -173,6 +196,11 @@ function EquiposTab({ teams, leagues, loading, onTeamsChange }: {
         <div className="min-w-0">
           <p className="font-semibold text-white">{team.name}</p>
           <p className="text-gray-500 text-sm truncate">/{team.slug}</p>
+          <p className="text-gray-600 text-xs truncate">
+            {coordinadores.length > 0
+              ? `Coordinador: ${coordinadores.map(c => c.full_name || c.email).join(', ')}`
+              : 'Sin coordinador asignado'}
+          </p>
         </div>
         <div className="ml-auto flex items-center gap-1 shrink-0">
           <button onClick={e => { e.stopPropagation(); setLeagueTeam(team) }} className="p-2 rounded-lg text-gray-600 hover:text-blue-400 hover:bg-blue-500/10" aria-label="Liga">
@@ -371,7 +399,8 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
   teams: Team[]; leagues: League[]; categories: Category[]; onCategoriesChange: (categories: Category[]) => void
 }) {
   const [selectedLeague, setSelectedLeague] = useState<string>(ALL_LEAGUES)
-  const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null)
+  const [selectedCategoryNames, setSelectedCategoryNames] = useState<Set<string>>(new Set())
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<Set<string>>(new Set())
   const [bulkFile, setBulkFile] = useState<File | null>(null)
   const [bulkPreview, setBulkPreview] = useState<string | null>(null)
   const [applyingBulk, setApplyingBulk] = useState(false)
@@ -390,9 +419,29 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
     new Set(categories.filter(c => teamIdsInLeague.has(c.team_id)).map(c => c.name))
   ).sort((a, b) => a.localeCompare(b))
 
-  const matchingCategories = selectedCategoryName
-    ? categories.filter(c => teamIdsInLeague.has(c.team_id) && c.name === selectedCategoryName)
-    : []
+  const matchingCategories = categories.filter(c => teamIdsInLeague.has(c.team_id) && selectedCategoryNames.has(c.name))
+
+  function toggleCategoryName(name: string) {
+    setSelectedCategoryNames(prev => {
+      const next = new Set(prev)
+      next.has(name) ? next.delete(name) : next.add(name)
+      return next
+    })
+  }
+
+  function toggleRow(id: string) {
+    setSelectedCategoryIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllRows() {
+    setSelectedCategoryIds(prev =>
+      prev.size === matchingCategories.length ? new Set() : new Set(matchingCategories.map(c => c.id))
+    )
+  }
 
   function updateCategory(updated: Category) {
     onCategoriesChange(categories.map(c => c.id === updated.id ? updated : c))
@@ -400,16 +449,16 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
 
   async function handleBulkApply() {
     if (!bulkFile) { toast.error('Elegí una imagen'); return }
-    if (matchingCategories.length === 0) return
+    if (selectedCategoryIds.size === 0) { toast.error('Marcá al menos un club/categoría de la lista'); return }
     setApplyingBulk(true)
     try {
       const url = await uploadTeamPhoto(bulkFile, `bulk-sponsors/${Date.now()}`)
-      const ids = matchingCategories.map(c => c.id)
+      const ids = Array.from(selectedCategoryIds)
       const { error } = await supabase.from('categories').update({ sponsor_url: url }).in('id', ids)
       if (error) throw error
       onCategoriesChange(categories.map(c => ids.includes(c.id) ? { ...c, sponsor_url: url } : c))
-      toast.success(`Auspiciador aplicado a "${selectedCategoryName}" en ${ids.length} club${ids.length !== 1 ? 'es' : ''}`)
-      setBulkFile(null); setBulkPreview(null)
+      toast.success(`Auspiciador aplicado a ${ids.length} categoría${ids.length !== 1 ? 's' : ''}`)
+      setBulkFile(null); setBulkPreview(null); setSelectedCategoryIds(new Set())
     } catch (err: any) {
       toast.error(err.message ?? 'No se pudo aplicar el auspiciador')
     }
@@ -425,14 +474,14 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
   return (
     <div>
       <p className="text-gray-400 text-sm mb-4">
-        Elegí una liga y una categoría para ver y editar el auspiciador de cada club — si un club tiene varias categorías (ej. Boedo con Senior, Reserva, Femenino), cada una aparece por separado.
+        Elegí una liga y una o más categorías para ver y editar el auspiciador de cada club — si un club tiene varias categorías (ej. Boedo con Senior, Reserva, Femenino), cada una aparece por separado y podés marcar sólo las que querés actualizar.
       </p>
 
       <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
         {leagueOptions.map(opt => (
           <button
             key={opt.key}
-            onClick={() => { setSelectedLeague(opt.key); setSelectedCategoryName(null) }}
+            onClick={() => { setSelectedLeague(opt.key); setSelectedCategoryNames(new Set()); setSelectedCategoryIds(new Set()) }}
             className="shrink-0 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
             style={selectedLeague === opt.key ? { background: '#3b82f6', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
           >
@@ -448,48 +497,70 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
           {categoryNamesInLeague.map(name => (
             <button
               key={name}
-              onClick={() => setSelectedCategoryName(name)}
-              className="shrink-0 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
-              style={selectedCategoryName === name ? { background: '#22c55e', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+              onClick={() => toggleCategoryName(name)}
+              className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
+              style={selectedCategoryNames.has(name) ? { background: '#22c55e', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
             >
-              {name}
+              {selectedCategoryNames.has(name) && <Check size={12} />} {name}
             </button>
           ))}
         </div>
       )}
 
-      {selectedCategoryName && matchingCategories.length > 0 && (
-        <div className="rounded-2xl border border-dashed border-gray-700 p-4 mb-5">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
-            Aplicar la misma imagen a los {matchingCategories.length} club{matchingCategories.length !== 1 ? 'es' : ''} de "{selectedCategoryName}" en esta liga
-          </p>
-          {bulkPreview ? (
-            <div className="relative rounded-xl overflow-hidden border-2 border-gray-700 bg-black mb-3" style={{ height: 80 }}>
-              <img src={bulkPreview} alt="" className="w-full h-full object-cover" />
-              <button onClick={() => { setBulkFile(null); setBulkPreview(null) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-white"><X size={12} /></button>
+      {matchingCategories.length > 0 && (
+        <>
+          <div className="rounded-2xl border border-dashed border-gray-700 p-4 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Aplicar la misma imagen a los marcados abajo ({selectedCategoryIds.size})
+              </p>
+              <button onClick={toggleAllRows} className="text-xs font-semibold shrink-0" style={{ color: '#22c55e' }}>
+                {selectedCategoryIds.size === matchingCategories.length ? 'Ninguno' : 'Todos'}
+              </button>
             </div>
-          ) : (
-            <button onClick={() => bulkFileRef.current?.click()} className="flex items-center justify-center gap-2 py-3 w-full rounded-xl border border-dashed border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 mb-3">
-              <ImagePlus size={16} /><span className="text-xs font-semibold">Elegí una imagen</span>
-            </button>
-          )}
-          <input ref={bulkFileRef} type="file" accept="image/*" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (!f) return; setBulkFile(f); setBulkPreview(URL.createObjectURL(f)) }} />
-          <Button fullWidth size="sm" loading={applyingBulk} onClick={handleBulkApply}>Aplicar a todos</Button>
-        </div>
-      )}
+            {bulkPreview ? (
+              <div className="relative rounded-xl overflow-hidden border-2 border-gray-700 bg-black mb-3" style={{ height: 80 }}>
+                <img src={bulkPreview} alt="" className="w-full h-full object-cover" />
+                <button onClick={() => { setBulkFile(null); setBulkPreview(null) }} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-white"><X size={12} /></button>
+              </div>
+            ) : (
+              <button onClick={() => bulkFileRef.current?.click()} className="flex items-center justify-center gap-2 py-3 w-full rounded-xl border border-dashed border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 mb-3">
+                <ImagePlus size={16} /><span className="text-xs font-semibold">Elegí una imagen</span>
+              </button>
+            )}
+            <input ref={bulkFileRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (!f) return; setBulkFile(f); setBulkPreview(URL.createObjectURL(f)) }} />
+            <Button fullWidth size="sm" loading={applyingBulk} onClick={handleBulkApply}>
+              Aplicar a {selectedCategoryIds.size} marcado{selectedCategoryIds.size !== 1 ? 's' : ''}
+            </Button>
+          </div>
 
-      {selectedCategoryName ? (
-        <div className="flex flex-col gap-2">
-          {matchingCategories.map(cat => {
-            const team = teamById.get(cat.team_id)
-            if (!team) return null
-            return <CategorySponsorInlineRow key={cat.id} team={team} category={cat} onChanged={updateCategory} />
-          })}
-        </div>
-      ) : categoryNamesInLeague.length > 0 ? (
-        <p className="text-gray-600 text-sm text-center py-6">Elegí una categoría arriba para ver los clubes.</p>
-      ) : null}
+          <div className="flex flex-col gap-2">
+            {matchingCategories.map(cat => {
+              const team = teamById.get(cat.team_id)
+              if (!team) return null
+              return (
+                <div key={cat.id} className="flex items-center gap-2">
+                  <button
+                    onClick={() => toggleRow(cat.id)}
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border-2"
+                    style={selectedCategoryIds.has(cat.id) ? { background: '#22c55e', borderColor: '#22c55e' } : { borderColor: '#374151' }}
+                    aria-label="Marcar"
+                  >
+                    {selectedCategoryIds.has(cat.id) && <Check size={13} color="#030712" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <CategorySponsorInlineRow team={team} category={cat} onChanged={updateCategory} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+      {selectedCategoryNames.size === 0 && categoryNamesInLeague.length > 0 && (
+        <p className="text-gray-600 text-sm text-center py-6">Elegí una o más categorías arriba para ver los clubes.</p>
+      )}
     </div>
   )
 }
@@ -530,6 +601,28 @@ function DashboardTab({ teams, leagues, categories, onGoTo }: {
         </div>
       )}
 
+      <Card padding={false} className="px-4 mb-4">
+        <div className="flex items-center gap-2 py-3 border-b border-gray-800">
+          <Users2 size={14} className="text-green-400" />
+          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Equipos recientes</span>
+        </div>
+        {teams.length === 0 ? (
+          <p className="text-gray-600 text-sm text-center py-6">Todavía no se creó ningún equipo.</p>
+        ) : teams.slice(0, 6).map(t => (
+          <button
+            key={t.id}
+            onClick={() => onGoTo('equipos')}
+            className="w-full flex items-center gap-3 py-3 border-b border-gray-800/50 last:border-0 text-left"
+          >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: t.primary_color + '26', color: t.primary_color }}>
+              {t.logo_url ? <img src={t.logo_url} alt="" className="w-full h-full object-cover" /> : t.name[0]}
+            </div>
+            <span className="text-sm font-semibold text-white flex-1 truncate">{t.name}</span>
+            <span className="text-gray-600 text-xs shrink-0">{new Date(t.created_at).toLocaleDateString('es-CL')}</span>
+          </button>
+        ))}
+      </Card>
+
       <Card padding={false} className="px-4">
         <div className="flex items-center gap-2 py-3 border-b border-gray-800">
           <Trophy size={14} className="text-blue-400" />
@@ -551,43 +644,52 @@ function DashboardTab({ teams, leagues, categories, onGoTo }: {
   )
 }
 
-// ── USUARIOS TAB — todos los usuarios, con rol/liga/categoría y acceso admin ─
-interface UserRow {
-  user_id: string
-  email: string
-  full_name: string
-  team_id: string
-  team_name: string
-  league_name: string | null
-  category_name: string | null
-  player_position: string | null
-  role: string
-  is_platform_admin: boolean
-}
+// ── USUARIOS TAB — usuarios de la app (excluye administradores) + acceso admin
+interface PlatformAdminRow { user_id: string; email: string; created_at: string }
 
-const ROLE_LABEL: Record<string, string> = {
-  player: 'Jugador',
-  dt: 'DT',
-  coordinador: 'Coordinador',
-  admin: 'Admin de club',
-  captain: 'Capitán',
-}
-const ROLE_OPTIONS = ['player', 'dt', 'coordinador', 'admin', 'captain']
-
-function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
-  const [rows, setRows] = useState<UserRow[]>([])
-  const [loading, setLoading] = useState(true)
+function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
+  rows: UserRow[]; loading: boolean; currentUserId: string | undefined; onRowsChange: (rows: UserRow[]) => void
+}) {
   const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [admins, setAdmins] = useState<PlatformAdminRow[]>([])
+  const [loadingAdmins, setLoadingAdmins] = useState(true)
+  const [email, setEmail] = useState('')
+  const [granting, setGranting] = useState(false)
 
-  async function load() {
-    setLoading(true)
-    const { data, error } = await supabase.rpc('admin_list_users')
-    if (error) { toast.error(error.message); setLoading(false); return }
-    setRows(data ?? [])
-    setLoading(false)
+  async function loadAdmins() {
+    setLoadingAdmins(true)
+    const { data, error } = await supabase.rpc('admin_list_platform_admins')
+    if (error) { toast.error(error.message); setLoadingAdmins(false); return }
+    setAdmins(data ?? [])
+    setLoadingAdmins(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { loadAdmins() }, [])
+
+  async function handleGrantAdmin() {
+    const trimmed = email.trim()
+    if (!trimmed) { toast.error('Ingresá el email del usuario'); return }
+    setGranting(true)
+    const { error } = await supabase.rpc('admin_grant_platform_admin', { p_email: trimmed })
+    setGranting(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(`${trimmed} ahora es administrador de la plataforma`)
+    setEmail('')
+    loadAdmins()
+    onRowsChange(rows.map(r => r.email.toLowerCase() === trimmed.toLowerCase() ? { ...r, is_platform_admin: true } : r))
+  }
+
+  async function handleRevokeAdmin(row: PlatformAdminRow) {
+    if (row.user_id === currentUserId) { toast.error('No podés quitarte tu propio acceso'); return }
+    if (!window.confirm(`¿Quitar acceso de administrador de plataforma a ${row.email}?`)) return
+    const { error } = await supabase.rpc('admin_revoke_platform_admin', { p_user_id: row.user_id })
+    if (error) { toast.error(error.message); return }
+    toast.success('Acceso quitado')
+    loadAdmins()
+    onRowsChange(rows.map(r => r.user_id === row.user_id ? { ...r, is_platform_admin: false } : r))
+  }
+
+  const userRows = rows.filter(r => !r.is_platform_admin)
 
   async function handleRoleChange(row: UserRow, role: string) {
     const key = `${row.team_id}-${row.user_id}`
@@ -595,36 +697,59 @@ function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
     const { error } = await supabase.rpc('admin_set_team_member_role', { p_team_id: row.team_id, p_user_id: row.user_id, p_role: role })
     setSavingKey(null)
     if (error) { toast.error(error.message); return }
-    setRows(prev => prev.map(r => (r.team_id === row.team_id && r.user_id === row.user_id) ? { ...r, role } : r))
+    onRowsChange(rows.map(r => (r.team_id === row.team_id && r.user_id === row.user_id) ? { ...r, role } : r))
     toast.success('Rol actualizado')
   }
 
-  async function handleTogglePlatformAdmin(row: UserRow) {
-    if (row.is_platform_admin) {
-      if (row.user_id === currentUserId) { toast.error('No podés quitarte tu propio acceso'); return }
-      if (!window.confirm(`¿Quitar acceso de administrador de plataforma a ${row.email}?`)) return
-      const { error } = await supabase.rpc('admin_revoke_platform_admin', { p_user_id: row.user_id })
-      if (error) { toast.error(error.message); return }
-      toast.success('Acceso quitado')
-    } else {
-      const { error } = await supabase.rpc('admin_grant_platform_admin', { p_email: row.email })
-      if (error) { toast.error(error.message); return }
-      toast.success(`${row.email} ahora es administrador de la plataforma`)
-    }
-    setRows(prev => prev.map(r => r.user_id === row.user_id ? { ...r, is_platform_admin: !row.is_platform_admin } : r))
-  }
-
-  if (loading) {
-    return <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
+  async function handleGrantFromRow(row: UserRow) {
+    const { error } = await supabase.rpc('admin_grant_platform_admin', { p_email: row.email })
+    if (error) { toast.error(error.message); return }
+    toast.success(`${row.email} ahora es administrador de la plataforma`)
+    onRowsChange(rows.map(r => r.user_id === row.user_id ? { ...r, is_platform_admin: true } : r))
+    loadAdmins()
   }
 
   return (
     <div>
+      <Card className="mb-6">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Administradores de la plataforma</p>
+        <div className="flex gap-2 mb-3">
+          <input
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleGrantAdmin() }}
+            placeholder="Email del usuario ya registrado"
+            type="email"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none min-w-0"
+          />
+          <Button loading={granting} onClick={handleGrantAdmin}><Plus size={15} /> Dar acceso</Button>
+        </div>
+        {loadingAdmins ? (
+          <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {admins.map(a => (
+              <div key={a.user_id} className="flex items-center gap-2 py-1.5">
+                <ShieldCheck size={14} className="text-green-400 shrink-0" />
+                <span className="text-sm text-white flex-1 truncate">{a.email}{a.user_id === currentUserId && ' (vos)'}</span>
+                {a.user_id !== currentUserId && (
+                  <button onClick={() => handleRevokeAdmin(a)} className="text-gray-600 hover:text-red-400 shrink-0" aria-label="Quitar acceso">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       <p className="text-gray-400 text-sm mb-4">
-        Todas las personas registradas en algún club — su rol, liga, categoría y si tienen acceso de administrador de la plataforma. Una persona puede aparecer más de una vez si juega en más de un club.
+        Usuarios de la app — su rol, club, liga y categoría. Una persona puede aparecer más de una vez si juega en más de un club. Los administradores de la plataforma no se listan acá.
       </p>
 
-      {rows.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
+      ) : userRows.length === 0 ? (
         <p className="text-gray-600 text-sm text-center py-8">Todavía no hay usuarios en ningún club.</p>
       ) : (
         <div className="overflow-x-auto -mx-4 md:mx-0">
@@ -638,11 +763,11 @@ function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
                 <th className="px-3 py-2 font-bold">Categoría</th>
                 <th className="px-3 py-2 font-bold">Posición</th>
                 <th className="px-3 py-2 font-bold">Tipo de usuario</th>
-                <th className="px-3 py-2 font-bold">Administrador</th>
+                <th className="px-3 py-2 font-bold"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => {
+              {userRows.map(row => {
                 const key = `${row.team_id}-${row.user_id}`
                 return (
                   <tr key={key} className="border-b border-gray-800/50">
@@ -664,11 +789,12 @@ function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <button
-                        onClick={() => handleTogglePlatformAdmin(row)}
+                        onClick={() => handleGrantFromRow(row)}
                         className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold"
-                        style={row.is_platform_admin ? { background: '#22c55e20', color: '#22c55e' } : { background: '#1f2937', color: '#6b7280' }}
+                        style={{ background: '#1f2937', color: '#6b7280' }}
+                        title="Dar acceso de administrador de la plataforma"
                       >
-                        <ShieldCheck size={12} /> {row.is_platform_admin ? 'Sí' : 'No'}
+                        <ShieldCheck size={12} /> Dar admin
                       </button>
                     </td>
                   </tr>
@@ -684,7 +810,8 @@ function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
 
 // ── ROOT PANEL ──────────────────────────────────────────────────────────────
 export function AdminPanelPage() {
-  const { user } = useAuthStore()
+  const navigate = useNavigate()
+  const { user, signOut } = useAuthStore()
   const [checked, setChecked] = useState(false)
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [tab, setTab] = useState<Tab>('dashboard')
@@ -692,6 +819,9 @@ export function AdminPanelPage() {
   const [leagues, setLeagues] = useState<League[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loadingTeams, setLoadingTeams] = useState(true)
+  const [userRows, setUserRows] = useState<UserRow[]>([])
+  const [loadingUserRows, setLoadingUserRows] = useState(true)
+  const [displayName, setDisplayName] = useState('')
 
   useEffect(() => {
     async function init() {
@@ -700,6 +830,9 @@ export function AdminPanelPage() {
       setIsPlatformAdmin(!!adminRow)
       setChecked(true)
       if (!adminRow) return
+
+      supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle()
+        .then(({ data }) => setDisplayName(data?.full_name || user.email?.split('@')[0] || ''))
 
       const [{ data: teamRows }, { data: leagueRows }] = await Promise.all([
         supabase.from('teams').select('*').order('created_at', { ascending: false }),
@@ -714,9 +847,19 @@ export function AdminPanelPage() {
         const { data: catRows } = await supabase.from('categories').select('*').in('team_id', teamIds).order('name')
         setCategories(catRows ?? [])
       }
+
+      const { data: userRowsData, error: userRowsError } = await supabase.rpc('admin_list_users')
+      if (userRowsError) toast.error(userRowsError.message)
+      setUserRows(userRowsData ?? [])
+      setLoadingUserRows(false)
     }
     init()
   }, [user])
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login')
+  }
 
   if (!checked) {
     return <div className="min-h-dvh flex items-center justify-center"><div className="w-8 h-8 border-2 border-gray-800 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
@@ -753,7 +896,7 @@ export function AdminPanelPage() {
           </div>
         </div>
         <p className="text-gray-600 text-[11px] px-2 mb-6">Gestión de la plataforma</p>
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-col gap-1 flex-1">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -765,13 +908,21 @@ export function AdminPanelPage() {
             </button>
           ))}
         </nav>
+        <button onClick={handleSignOut} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-left text-gray-500 hover:text-red-400">
+          <LogOut size={16} /> Cerrar sesión
+        </button>
       </aside>
 
       {/* Mobile top selector */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-gray-900 border-b border-gray-800 px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-xl">👑</span>
-          <p className="text-white font-bold text-sm">Panel de administrador</p>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xl">👑</span>
+            <p className="text-white font-bold text-sm truncate">Hola{displayName ? `, ${displayName}` : ''}</p>
+          </div>
+          <button onClick={handleSignOut} className="flex items-center gap-1 text-gray-400 hover:text-red-400 text-xs font-semibold shrink-0">
+            <LogOut size={14} /> Salir
+          </button>
         </div>
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
           {TABS.map(({ key, label, icon: Icon }) => (
@@ -789,15 +940,21 @@ export function AdminPanelPage() {
 
       {/* Main content */}
       <main className="flex-1 min-w-0 px-4 md:px-8 pt-28 md:pt-8 pb-16 max-w-4xl">
-        <h1 className="text-2xl font-bold text-white mb-1">{currentLabel}</h1>
-        <p className="text-gray-500 text-sm mb-6">TeamApp — gestión de la plataforma</p>
+        <div className="hidden md:flex items-center justify-between mb-1">
+          <h1 className="text-2xl font-bold text-white">Hola{displayName ? `, ${displayName}` : ''} 👋</h1>
+          <button onClick={handleSignOut} className="flex items-center gap-1.5 text-gray-400 hover:text-red-400 text-sm font-semibold shrink-0">
+            <LogOut size={16} /> Cerrar sesión
+          </button>
+        </div>
+        <p className="text-gray-500 text-sm mb-6 hidden md:block">{currentLabel} — TeamApp gestión de la plataforma</p>
+        <h1 className="text-2xl font-bold text-white mb-1 md:hidden">{currentLabel}</h1>
 
         {tab === 'dashboard' && <DashboardTab teams={teams} leagues={leagues} categories={categories} onGoTo={setTab} />}
-        {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} loading={loadingTeams} onTeamsChange={setTeams} />}
+        {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} userRows={userRows} loading={loadingTeams} onTeamsChange={setTeams} />}
         {tab === 'ligas' && <LigasTab leagues={leagues} onLeaguesChange={setLeagues} />}
         {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
         {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
-        {tab === 'usuarios' && <UsuariosTab currentUserId={user?.id} />}
+        {tab === 'usuarios' && <UsuariosTab rows={userRows} loading={loadingUserRows} currentUserId={user?.id} onRowsChange={setUserRows} />}
       </main>
     </div>
   )
