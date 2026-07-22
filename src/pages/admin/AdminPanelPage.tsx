@@ -807,6 +807,17 @@ function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
     loadAdmins()
   }
 
+  async function handleRemoveFromTeam(row: UserRow) {
+    if (!window.confirm(`¿Sacar a ${row.full_name || row.email} de ${row.team_name}?`)) return
+    const key = `${row.team_id}-${row.user_id}`
+    setSavingKey(key)
+    const { error } = await supabase.from('team_members').delete().eq('team_id', row.team_id).eq('user_id', row.user_id)
+    setSavingKey(null)
+    if (error) { toast.error(error.message); return }
+    onRowsChange(rows.filter(r => !(r.team_id === row.team_id && r.user_id === row.user_id)))
+    toast.success(`Sacado de ${row.team_name}`)
+  }
+
   return (
     <div>
       <Card className="mb-6">
@@ -862,6 +873,7 @@ function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
                 <th className="px-3 py-2 font-bold">Posición</th>
                 <th className="px-3 py-2 font-bold">Tipo de usuario</th>
                 <th className="px-3 py-2 font-bold"></th>
+                <th className="px-3 py-2 font-bold"></th>
               </tr>
             </thead>
             <tbody>
@@ -893,6 +905,16 @@ function UsuariosTab({ rows, loading, currentUserId, onRowsChange }: {
                         title="Dar acceso de administrador de la plataforma"
                       >
                         <ShieldCheck size={12} /> Dar admin
+                      </button>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <button
+                        onClick={() => handleRemoveFromTeam(row)}
+                        disabled={savingKey === key}
+                        className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10"
+                        title={`Sacar de ${row.team_name}`}
+                      >
+                        <Trash2 size={14} />
                       </button>
                     </td>
                   </tr>
