@@ -560,7 +560,7 @@ interface UserRow {
   team_name: string
   league_name: string | null
   category_name: string | null
-  position: string | null
+  player_position: string | null
   role: string
   is_platform_admin: boolean
 }
@@ -651,7 +651,7 @@ function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
                     <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.team_name}</td>
                     <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.league_name ?? '—'}</td>
                     <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.category_name ?? '—'}</td>
-                    <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.position ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.player_position ?? '—'}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <select
                         value={row.role}

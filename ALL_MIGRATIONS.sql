@@ -1041,7 +1041,7 @@ returns table(
   team_name text,
   league_name text,
   category_name text,
-  position text,
+  player_position text,
   role text,
   is_platform_admin boolean
 )
