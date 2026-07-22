@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3 } from 'lucide-react'
+import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3, LayoutDashboard, UserCog, ShieldCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -11,7 +11,7 @@ import { uploadTeamPhoto } from '@/lib/storage'
 import { RankingsPage } from '@/pages/rankings/RankingsPage'
 import type { Team, Category, League } from '@/types'
 
-type Tab = 'equipos' | 'ligas' | 'auspiciadores' | 'rankings'
+type Tab = 'dashboard' | 'equipos' | 'ligas' | 'auspiciadores' | 'rankings' | 'usuarios'
 
 // ── Manage a specific club's per-category sponsors without entering it ────────
 function TeamSponsorSheet({ team, onClose }: { team: Team; onClose: () => void }) {
@@ -494,12 +494,163 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
   )
 }
 
+// ── DASHBOARD TAB ───────────────────────────────────────────────────────────
+function StatCard({ value, label, accent }: { value: number; label: string; accent: string }) {
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: accent }} />
+      <p className="text-3xl font-black text-white">{value}</p>
+      <p className="text-gray-500 text-sm mt-0.5">{label}</p>
+    </Card>
+  )
+}
+
+function DashboardTab({ teams, leagues, categories, onGoTo }: {
+  teams: Team[]; leagues: League[]; categories: Category[]; onGoTo: (tab: Tab) => void
+}) {
+  const withSponsor = categories.filter(c => c.sponsor_url).length
+  const unassigned = teams.filter(t => !t.league_id)
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <StatCard value={teams.length} label="Equipos" accent="#22c55e" />
+        <StatCard value={leagues.length} label="Ligas" accent="#3b82f6" />
+        <StatCard value={categories.length} label="Categorías" accent="#a855f7" />
+        <StatCard value={withSponsor} label="Con auspiciador" accent="#f59e0b" />
+      </div>
+
+      {unassigned.length > 0 && (
+        <div className="rounded-2xl border border-dashed border-gray-700 p-4 mb-4">
+          <p className="text-sm font-semibold text-white mb-1">
+            {unassigned.length} equipo{unassigned.length !== 1 ? 's' : ''} sin liga asignada
+          </p>
+          <p className="text-gray-500 text-xs mb-3">Asignalos desde la sección Equipos para que aparezcan en los rankings.</p>
+          <Button size="sm" onClick={() => onGoTo('equipos')}>Ir a Equipos</Button>
+        </div>
+      )}
+
+      <Card padding={false} className="px-4">
+        <div className="flex items-center gap-2 py-3 border-b border-gray-800">
+          <Trophy size={14} className="text-blue-400" />
+          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Ligas</span>
+        </div>
+        {leagues.length === 0 ? (
+          <p className="text-gray-600 text-sm text-center py-6">Todavía no creaste ninguna liga.</p>
+        ) : leagues.map(l => {
+          const count = teams.filter(t => t.league_id === l.id).length
+          return (
+            <div key={l.id} className="flex items-center justify-between py-3 border-b border-gray-800/50 last:border-0">
+              <span className="text-sm font-semibold text-white">{l.name}</span>
+              <span className="text-gray-500 text-xs">{count} club{count !== 1 ? 'es' : ''}</span>
+            </div>
+          )
+        })}
+      </Card>
+    </div>
+  )
+}
+
+// ── USUARIOS TAB — otorgar/quitar acceso de administrador de plataforma ────
+interface PlatformAdminRow { user_id: string; email: string; created_at: string }
+
+function UsuariosTab({ currentUserId }: { currentUserId: string | undefined }) {
+  const [admins, setAdmins] = useState<PlatformAdminRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [email, setEmail] = useState('')
+  const [granting, setGranting] = useState(false)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('admin_list_platform_admins')
+    if (error) { toast.error(error.message); setLoading(false); return }
+    setAdmins(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function handleGrant() {
+    const trimmed = email.trim()
+    if (!trimmed) { toast.error('Ingresá el email del usuario'); return }
+    setGranting(true)
+    const { error } = await supabase.rpc('admin_grant_platform_admin', { p_email: trimmed })
+    setGranting(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(`${trimmed} ahora es administrador de la plataforma`)
+    setEmail('')
+    load()
+  }
+
+  async function handleRevoke(row: PlatformAdminRow) {
+    if (!window.confirm(`¿Quitar acceso de administrador a ${row.email}?`)) return
+    setRevokingId(row.user_id)
+    const { error } = await supabase.rpc('admin_revoke_platform_admin', { p_user_id: row.user_id })
+    setRevokingId(null)
+    if (error) { toast.error(error.message); return }
+    toast.success('Acceso quitado')
+    load()
+  }
+
+  return (
+    <div>
+      <p className="text-gray-400 text-sm mb-4">
+        Los administradores de la plataforma ven y gestionan todos los clubes, ligas, auspiciadores y rankings.
+      </p>
+
+      <div className="flex gap-2 mb-5">
+        <input
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleGrant() }}
+          placeholder="Email del usuario ya registrado"
+          type="email"
+          className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none min-w-0"
+        />
+        <Button loading={granting} onClick={handleGrant}><Plus size={15} /> Dar acceso</Button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-700 rounded-full animate-spin" style={{ borderTopColor: '#22c55e' }} /></div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {admins.map(a => (
+            <Card key={a.user_id} className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#22c55e26', color: '#22c55e' }}>
+                <ShieldCheck size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white truncate">{a.email}</p>
+                <p className="text-gray-500 text-xs">
+                  Admin desde {new Date(a.created_at).toLocaleDateString('es-CL')}
+                  {a.user_id === currentUserId && ' · vos'}
+                </p>
+              </div>
+              {a.user_id !== currentUserId && (
+                <button
+                  onClick={() => handleRevoke(a)}
+                  disabled={revokingId === a.user_id}
+                  className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+                  aria-label="Quitar acceso"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── ROOT PANEL ──────────────────────────────────────────────────────────────
 export function AdminPanelPage() {
   const { user } = useAuthStore()
   const [checked, setChecked] = useState(false)
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
-  const [tab, setTab] = useState<Tab>('equipos')
+  const [tab, setTab] = useState<Tab>('dashboard')
   const [teams, setTeams] = useState<Team[]>([])
   const [leagues, setLeagues] = useState<League[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -543,37 +694,74 @@ export function AdminPanelPage() {
   }
 
   const TABS: { key: Tab; label: string; icon: typeof Users2 }[] = [
+    { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { key: 'equipos', label: 'Equipos', icon: Users2 },
     { key: 'ligas', label: 'Ligas', icon: Trophy },
     { key: 'auspiciadores', label: 'Auspiciadores', icon: Megaphone },
-    { key: 'rankings', label: 'Rankings', icon: BarChart3 },
+    { key: 'rankings', label: 'Ranking', icon: BarChart3 },
+    { key: 'usuarios', label: 'Usuarios', icon: UserCog },
   ]
 
+  const currentLabel = TABS.find(t => t.key === tab)?.label ?? ''
+
   return (
-    <div className="min-h-dvh max-w-2xl mx-auto px-4 pt-10 pb-16">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="text-2xl">👑</span>
-        <h1 className="text-2xl font-bold text-white">Panel de administrador</h1>
-      </div>
-      <p className="text-gray-400 text-sm mb-6">TeamApp — gestión de la plataforma</p>
+    <div className="min-h-dvh flex" style={{ background: '#0b1220' }}>
+      {/* Sidebar */}
+      <aside className="hidden md:flex md:w-64 md:flex-col shrink-0 border-r border-gray-800 px-4 py-6">
+        <div className="flex items-center gap-2 mb-1 px-2">
+          <span className="text-2xl">👑</span>
+          <div>
+            <p className="text-white font-bold leading-tight">TeamApp</p>
+            <p className="text-gray-500 text-xs leading-tight">Panel interno</p>
+          </div>
+        </div>
+        <p className="text-gray-600 text-[11px] px-2 mb-6">Gestión de la plataforma</p>
+        <nav className="flex flex-col gap-1">
+          {TABS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-colors"
+              style={tab === key ? { background: '#22c55e1a', color: '#22c55e' } : { color: '#9ca3af' }}
+            >
+              <Icon size={16} /> {label}
+            </button>
+          ))}
+        </nav>
+      </aside>
 
-      <div className="flex gap-2 mb-6 overflow-x-auto no-scrollbar border-b border-gray-800 pb-px">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-sm font-bold border-b-2 transition-colors"
-            style={tab === key ? { borderColor: '#22c55e', color: '#22c55e' } : { borderColor: 'transparent', color: '#6b7280' }}
-          >
-            <Icon size={15} /> {label}
-          </button>
-        ))}
+      {/* Mobile top selector */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-gray-900 border-b border-gray-800 px-4 pt-3 pb-2">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xl">👑</span>
+          <p className="text-white font-bold text-sm">Panel de administrador</p>
+        </div>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          {TABS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors"
+              style={tab === key ? { background: '#22c55e', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+            >
+              <Icon size={13} /> {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} loading={loadingTeams} onTeamsChange={setTeams} />}
-      {tab === 'ligas' && <LigasTab leagues={leagues} onLeaguesChange={setLeagues} />}
-      {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
-      {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
+      {/* Main content */}
+      <main className="flex-1 min-w-0 px-4 md:px-8 pt-28 md:pt-8 pb-16 max-w-4xl">
+        <h1 className="text-2xl font-bold text-white mb-1">{currentLabel}</h1>
+        <p className="text-gray-500 text-sm mb-6">TeamApp — gestión de la plataforma</p>
+
+        {tab === 'dashboard' && <DashboardTab teams={teams} leagues={leagues} categories={categories} onGoTo={setTab} />}
+        {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} loading={loadingTeams} onTeamsChange={setTeams} />}
+        {tab === 'ligas' && <LigasTab leagues={leagues} onLeaguesChange={setLeagues} />}
+        {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
+        {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
+        {tab === 'usuarios' && <UsuariosTab currentUserId={user?.id} />}
+      </main>
     </div>
   )
 }

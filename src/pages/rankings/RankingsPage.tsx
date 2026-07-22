@@ -6,6 +6,8 @@ import { useAuthStore } from '@/store/authStore'
 import { EmptyState } from '@/components/EmptyState'
 import type { League, Team } from '@/types'
 
+const ALL_CATEGORIES = '__all__'
+
 interface PlayerTally {
   player_id: string
   player_name: string
@@ -22,6 +24,12 @@ interface TeamTally {
   drawn: number
   lost: number
 }
+
+interface RawPlayer { id: string; name: string; team_id: string; category_id: string | null }
+interface RawEvent { player_id: string; type: string; team_id: string }
+interface RawVote { target_player_id: string; team_id: string }
+interface RawMatch { team_id: string; home_team: string; away_team: string; home_score: number | null; away_score: number | null; played: boolean; category_id: string | null }
+interface RawCategory { id: string; team_id: string; name: string }
 
 function RankingList({ icon: Icon, color, title, rows, unit }: {
   icon: typeof Target; color: string; title: string; rows: PlayerTally[]; unit: string
@@ -56,7 +64,16 @@ export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embed
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(embedded)
   const [leagues, setLeagues] = useState<League[]>(leaguesProp ?? [])
   const [leagueId, setLeagueId] = useState<string>('')
+  const [categoryName, setCategoryName] = useState<string>(ALL_CATEGORIES)
   const [loading, setLoading] = useState(false)
+
+  const [teamList, setTeamList] = useState<Team[]>([])
+  const [rawPlayers, setRawPlayers] = useState<RawPlayer[]>([])
+  const [rawEvents, setRawEvents] = useState<RawEvent[]>([])
+  const [rawVotes, setRawVotes] = useState<RawVote[]>([])
+  const [rawMatches, setRawMatches] = useState<RawMatch[]>([])
+  const [rawCategories, setRawCategories] = useState<RawCategory[]>([])
+
   const [scorers, setScorers] = useState<PlayerTally[]>([])
   const [assisters, setAssisters] = useState<PlayerTally[]>([])
   const [mvps, setMvps] = useState<PlayerTally[]>([])
@@ -83,35 +100,66 @@ export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embed
 
   useEffect(() => {
     if (!leagueId) return
+    setCategoryName(ALL_CATEGORIES)
     loadLeagueData(leagueId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueId])
 
+  useEffect(() => {
+    computeTallies()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryName, rawPlayers, rawEvents, rawVotes, rawMatches, rawCategories])
+
   async function loadLeagueData(id: string) {
     setLoading(true)
     const { data: teams } = await supabase.from('teams').select('*').eq('league_id', id)
-    const teamList: Team[] = teams ?? []
-    const teamIds = teamList.map(t => t.id)
-    const teamNameById = new Map(teamList.map(t => [t.id, t.name]))
+    const teams_: Team[] = teams ?? []
+    setTeamList(teams_)
+    const teamIds = teams_.map(t => t.id)
 
     if (teamIds.length === 0) {
-      setScorers([]); setAssisters([]); setMvps([]); setTeamRanking([])
+      setRawPlayers([]); setRawEvents([]); setRawVotes([]); setRawMatches([]); setRawCategories([])
       setLoading(false)
       return
     }
 
-    const [{ data: players }, { data: events }, { data: votes }, { data: matches }] = await Promise.all([
-      supabase.from('players').select('id, name, team_id').in('team_id', teamIds),
+    const [{ data: players }, { data: events }, { data: votes }, { data: matches }, { data: cats }] = await Promise.all([
+      supabase.from('players').select('id, name, team_id, category_id').in('team_id', teamIds),
       supabase.from('fixture_match_events').select('player_id, type, team_id').in('team_id', teamIds),
       supabase.from('fixture_match_mvp_votes').select('target_player_id, team_id').in('team_id', teamIds),
-      supabase.from('fixture_matches').select('team_id, home_team, away_team, home_score, away_score, played').in('team_id', teamIds),
+      supabase.from('fixture_matches').select('team_id, home_team, away_team, home_score, away_score, played, category_id').in('team_id', teamIds),
+      supabase.from('categories').select('id, team_id, name').in('team_id', teamIds),
     ])
 
-    const playerById = new Map((players ?? []).map(p => [p.id, p]))
+    setRawPlayers(players ?? [])
+    setRawEvents(events ?? [])
+    setRawVotes(votes ?? [])
+    setRawMatches(matches ?? [])
+    setRawCategories(cats ?? [])
+    setLoading(false)
+  }
 
-    function tally(rows: { player_id: string }[] | null): PlayerTally[] {
+  function computeTallies() {
+    const teamNameById = new Map(teamList.map(t => [t.id, t.name]))
+    const categoryIdsForName = categoryName === ALL_CATEGORIES
+      ? null
+      : new Set(rawCategories.filter(c => c.name === categoryName).map(c => c.id))
+
+    const players = categoryIdsForName
+      ? rawPlayers.filter(p => p.category_id && categoryIdsForName.has(p.category_id))
+      : rawPlayers
+    const playerIds = new Set(players.map(p => p.id))
+    const playerById = new Map(players.map(p => [p.id, p]))
+
+    const events = rawEvents.filter(e => playerIds.has(e.player_id))
+    const votes = rawVotes.filter(v => playerIds.has(v.target_player_id))
+    const matches = categoryIdsForName
+      ? rawMatches.filter(m => m.category_id && categoryIdsForName.has(m.category_id))
+      : rawMatches
+
+    function tally(rows: { player_id: string }[]): PlayerTally[] {
       const counts = new Map<string, number>()
-      for (const row of rows ?? []) {
+      for (const row of rows) {
         counts.set(row.player_id, (counts.get(row.player_id) ?? 0) + 1)
       }
       return Array.from(counts.entries())
@@ -128,16 +176,19 @@ export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embed
         .slice(0, 10)
     }
 
-    setScorers(tally((events ?? []).filter(e => e.type === 'goal')))
-    setAssisters(tally((events ?? []).filter(e => e.type === 'assist')))
-    setMvps(tally((votes ?? []).map(v => ({ player_id: v.target_player_id }))))
+    setScorers(tally(events.filter(e => e.type === 'goal')))
+    setAssisters(tally(events.filter(e => e.type === 'assist')))
+    setMvps(tally(votes.map(v => ({ player_id: v.target_player_id }))))
 
-    // Best teams: aggregate each team's own points across all its matches (any category)
+    // Best teams: aggregate each team's own points across its matches (filtered by category if one is selected)
+    const teamsWithData = categoryIdsForName
+      ? teamList.filter(t => rawCategories.some(c => c.team_id === t.id && categoryIdsForName.has(c.id)))
+      : teamList
     const teamStats = new Map<string, TeamTally>()
-    for (const t of teamList) {
+    for (const t of teamsWithData) {
       teamStats.set(t.id, { team_id: t.id, team_name: t.name, points: 0, played: 0, won: 0, drawn: 0, lost: 0 })
     }
-    for (const m of matches ?? []) {
+    for (const m of matches) {
       if (!m.played || m.home_score === null || m.away_score === null) continue
       const stat = teamStats.get(m.team_id)
       const teamName = teamNameById.get(m.team_id)
@@ -151,8 +202,6 @@ export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embed
       else { stat.drawn++; stat.points += 1 }
     }
     setTeamRanking(Array.from(teamStats.values()).sort((a, b) => b.points - a.points))
-
-    setLoading(false)
   }
 
   if (!checked) {
@@ -166,6 +215,8 @@ export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embed
       </div>
     )
   }
+
+  const categoryNamesInLeague = Array.from(new Set(rawCategories.map(c => c.name))).sort((a, b) => a.localeCompare(b))
 
   return (
     <div className={embedded ? '' : 'max-w-lg mx-auto px-4 pt-8 pb-10'}>
@@ -185,7 +236,7 @@ export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embed
         <EmptyState icon={<Trophy size={40} />} title="No hay ligas creadas" description="Creá una liga primero en la pestaña Ligas." />
       ) : (
         <>
-          <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar">
+          <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
             {leagues.map(l => (
               <button
                 key={l.id}
@@ -197,6 +248,28 @@ export function RankingsPage({ embedded = false, leagues: leaguesProp }: { embed
               </button>
             ))}
           </div>
+
+          {!loading && categoryNamesInLeague.length > 0 && (
+            <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => setCategoryName(ALL_CATEGORIES)}
+                className="shrink-0 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
+                style={categoryName === ALL_CATEGORIES ? { background: '#3b82f6', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+              >
+                Todas las categorías
+              </button>
+              {categoryNamesInLeague.map(name => (
+                <button
+                  key={name}
+                  onClick={() => setCategoryName(name)}
+                  className="shrink-0 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
+                  style={categoryName === name ? { background: '#3b82f6', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
 
           {loading ? (
             <div className="flex justify-center py-12">
