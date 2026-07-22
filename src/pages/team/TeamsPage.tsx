@@ -27,6 +27,13 @@ export function TeamsPage() {
         return
       }
 
+      // Turn any pending coordinador/player invite for this email into real
+      // membership before checking what teams this user belongs to — this
+      // must be awaited here too (not just fire-and-forget in RootLayout),
+      // otherwise a just-invited user can land here before the invite has
+      // actually been claimed and see an empty "Mis equipos".
+      await supabase.rpc('claim_invites')
+
       const { data: adminRow } = await supabase
         .from('platform_admins')
         .select('user_id')
@@ -42,7 +49,16 @@ export function TeamsPage() {
         .from('team_members')
         .select('team:teams(*)')
         .eq('user_id', user.id)
-      setTeams((data?.map((d: any) => d.team).filter(Boolean) ?? []))
+      const myTeams: Team[] = data?.map((d: any) => d.team).filter(Boolean) ?? []
+
+      // A single-team member (the common case for a coordinador/player just
+      // invited) should land straight on their team, not on a picker.
+      if (myTeams.length === 1) {
+        navigate(`/team/${myTeams[0].slug}`, { replace: true })
+        return
+      }
+
+      setTeams(myTeams)
       setLoading(false)
     }
     load()
