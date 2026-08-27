@@ -28,13 +28,19 @@ export function RegisterPage() {
       password: data.password,
       options: { data: { full_name: data.full_name } },
     })
-    setLoading(false)
     if (error) {
+      setLoading(false)
       toast.error(error.message)
-    } else {
-      toast.success('¡Cuenta creada! Revisá tu email para confirmar.')
-      navigate('/login')
+      return
     }
+    // Supabase can auto-confirm and hand back an active session here — sign
+    // it out so the person lands on a real login screen instead of racing
+    // AuthLayout's "already signed in" redirect (which showed as a blank
+    // screen while the auth-state listener caught up).
+    await supabase.auth.signOut()
+    setLoading(false)
+    toast.success('¡Cuenta creada! Iniciá sesión para continuar.')
+    navigate('/login')
   }
 
   return (

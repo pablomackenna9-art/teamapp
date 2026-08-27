@@ -56,6 +56,7 @@ export interface Category {
   team_id: string
   name: string
   sponsor_url?: string | null
+  sponsor_link_url?: string | null
 }
 
 export type PlayerResponsibility = 'dt' | 'tesorero' | 'coordinador'

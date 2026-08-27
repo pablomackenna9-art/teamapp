@@ -42,13 +42,12 @@ export function PhotosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTeamId, isDemo, demoPhotos])
 
-  async function handleUpload(file: File) {
-    if (!file.type.startsWith('image/')) { toast.error('Seleccioná una imagen'); return }
-    setUploading(true)
+  async function handleUploadOne(file: File): Promise<boolean> {
+    if (!file.type.startsWith('image/')) return false
     if (isDemo) {
       const dataUrl = await fileToDataUrl(file)
       addDemoPhoto({
-        id: `demo-ph-${Date.now()}`,
+        id: `demo-ph-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         team_id: 'mock-team-1',
         match_id: null,
         url: dataUrl,
@@ -57,22 +56,34 @@ export function PhotosPage() {
         created_at: new Date().toISOString(),
         featured: false,
       })
-      toast.success('Foto agregada')
-      setUploading(false)
-      return
+      return true
     }
     try {
-      const url = await uploadTeamPhoto(file, `${currentTeamId}/photos/${Date.now()}`)
+      const url = await uploadTeamPhoto(file, `${currentTeamId}/photos/${Date.now()}-${Math.random().toString(36).slice(2)}`)
       const { error } = await supabase.from('photos').insert({
         team_id: currentTeamId, url, uploaded_by: user?.id,
       })
       if (error) throw error
-      toast.success('Foto agregada')
-      loadPhotos()
+      return true
     } catch (err: any) {
       toast.error(err.message ?? 'No se pudo subir la foto')
+      return false
+    }
+  }
+
+  async function handleUpload(files: FileList | File[]) {
+    const list = Array.from(files)
+    if (list.length === 0) return
+    setUploading(true)
+    let ok = 0
+    for (const file of list) {
+      if (await handleUploadOne(file)) ok++
     }
     setUploading(false)
+    if (ok > 0) {
+      toast.success(ok === 1 ? 'Foto agregada' : `${ok} fotos agregadas`)
+      if (!isDemo) loadPhotos()
+    }
   }
 
   async function toggleFeatured(photo: Photo) {
@@ -112,8 +123,9 @@ export function PhotosPage() {
         ref={fileRef}
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }}
+        onChange={e => { if (e.target.files && e.target.files.length > 0) handleUpload(e.target.files); e.target.value = '' }}
       />
 
       {!loading && photos.length === 0 ? (

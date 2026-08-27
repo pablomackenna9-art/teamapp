@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3, LayoutDashboard, UserCog, ShieldCheck, LogOut } from 'lucide-react'
+import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3, LayoutDashboard, UserCog, ShieldCheck, LogOut, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -433,6 +433,8 @@ function CategorySponsorInlineRow({ team, category, onChanged }: {
   team: Team; category: Category; onChanged: (updated: Category) => void
 }) {
   const [uploading, setUploading] = useState(false)
+  const [linkValue, setLinkValue] = useState(category.sponsor_link_url ?? '')
+  const [savingLink, setSavingLink] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function handleUpload(file: File) {
@@ -457,34 +459,61 @@ function CategorySponsorInlineRow({ team, category, onChanged }: {
     toast.success('Auspiciador quitado')
   }
 
+  async function handleSaveLink() {
+    const trimmed = linkValue.trim()
+    if (trimmed === (category.sponsor_link_url ?? '')) return
+    setSavingLink(true)
+    const { error } = await supabase.from('categories').update({ sponsor_link_url: trimmed || null }).eq('id', category.id)
+    setSavingLink(false)
+    if (error) { toast.error(error.message); return }
+    onChanged({ ...category, sponsor_link_url: trimmed || null })
+    toast.success('Link del auspiciador guardado')
+  }
+
   return (
-    <Card className="flex items-center gap-3">
-      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: team.primary_color + '26', color: team.primary_color }}>
-        {team.logo_url ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" /> : team.name[0]}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-white truncate">{team.name}</p>
-        <p className="text-gray-500 text-xs truncate">{category.name}</p>
+    <Card>
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: team.primary_color + '26', color: team.primary_color }}>
+          {team.logo_url ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" /> : team.name[0]}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-white truncate">{team.name}</p>
+          <p className="text-gray-500 text-xs truncate">{category.name}</p>
+        </div>
+        {category.sponsor_url && (
+          <div className="rounded-lg overflow-hidden border border-gray-700 bg-black shrink-0" style={{ width: 72, height: 30 }}>
+            <img src={category.sponsor_url} alt="" className="w-full h-full object-cover" />
+          </div>
+        )}
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="p-2 rounded-lg text-gray-600 hover:text-amber-400 hover:bg-amber-500/10 shrink-0"
+          aria-label="Subir auspiciador"
+        >
+          {uploading ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" /> : <ImagePlus size={16} />}
+        </button>
+        {category.sponsor_url && (
+          <button onClick={handleRemove} className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 shrink-0" aria-label="Quitar auspiciador">
+            <Trash2 size={16} />
+          </button>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
       </div>
       {category.sponsor_url && (
-        <div className="rounded-lg overflow-hidden border border-gray-700 bg-black shrink-0" style={{ width: 72, height: 30 }}>
-          <img src={category.sponsor_url} alt="" className="w-full h-full object-cover" />
+        <div className="flex items-center gap-2 mt-2 pl-12">
+          <Link2 size={13} className="text-gray-600 shrink-0" />
+          <input
+            value={linkValue}
+            onChange={e => setLinkValue(e.target.value)}
+            onBlur={handleSaveLink}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+            placeholder="Link al hacer click (opcional) — https://..."
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-600 text-xs outline-none min-w-0"
+            disabled={savingLink}
+          />
         </div>
       )}
-      <button
-        onClick={() => fileRef.current?.click()}
-        disabled={uploading}
-        className="p-2 rounded-lg text-gray-600 hover:text-amber-400 hover:bg-amber-500/10 shrink-0"
-        aria-label="Subir auspiciador"
-      >
-        {uploading ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" /> : <ImagePlus size={16} />}
-      </button>
-      {category.sponsor_url && (
-        <button onClick={handleRemove} className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 shrink-0" aria-label="Quitar auspiciador">
-          <Trash2 size={16} />
-        </button>
-      )}
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
     </Card>
   )
 }
