@@ -383,9 +383,10 @@ function EquiposTab({ teams, leagues, userRows, loading, onTeamsChange, onRefres
 }
 
 // ── LIGAS TAB ───────────────────────────────────────────────────────────────
-function LigasTab({ leagues, onLeaguesChange }: { leagues: League[]; onLeaguesChange: (leagues: League[]) => void }) {
+function LigasTab({ leagues, teams, onLeaguesChange }: { leagues: League[]; teams: Team[]; onLeaguesChange: (leagues: League[]) => void }) {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   async function handleCreate() {
     const trimmed = name.trim()
@@ -399,6 +400,18 @@ function LigasTab({ leagues, onLeaguesChange }: { leagues: League[]; onLeaguesCh
     toast.success('Liga creada')
   }
 
+  async function handleDelete(league: League) {
+    const count = teams.filter(t => t.league_id === league.id).length
+    const warning = count > 0 ? ` ${count} club${count !== 1 ? 'es' : ''} va${count !== 1 ? 'n' : ''} a quedar sin liga asignada.` : ''
+    if (!window.confirm(`¿Eliminar "${league.name}"?${warning}`)) return
+    setDeletingId(league.id)
+    const { error } = await supabase.from('leagues').delete().eq('id', league.id)
+    setDeletingId(null)
+    if (error) { toast.error(error.message); return }
+    onLeaguesChange(leagues.filter(l => l.id !== league.id))
+    toast.success('Liga eliminada')
+  }
+
   return (
     <div>
       <p className="text-gray-400 text-sm mb-4">Agrupá los clubes por liga para verlos separados y armar rankings entre ellos.</p>
@@ -406,7 +419,15 @@ function LigasTab({ leagues, onLeaguesChange }: { leagues: League[]; onLeaguesCh
         {leagues.map(l => (
           <div key={l.id} className="flex items-center gap-2 py-3 border-b border-gray-800 last:border-0">
             <Trophy size={14} className="text-amber-400 shrink-0" />
-            <span className="text-sm font-semibold text-white">{l.name}</span>
+            <span className="text-sm font-semibold text-white flex-1">{l.name}</span>
+            <button
+              onClick={() => handleDelete(l)}
+              disabled={deletingId === l.id}
+              className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+              aria-label="Eliminar liga"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         ))}
         {leagues.length === 0 && <p className="text-gray-600 text-sm text-center py-6">Todavía no creaste ninguna liga.</p>}
@@ -1133,7 +1154,7 @@ export function AdminPanelPage() {
 
         {tab === 'dashboard' && <DashboardTab teams={teams} leagues={leagues} categories={categories} onGoTo={setTab} />}
         {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} userRows={userRows} loading={loadingTeams} onTeamsChange={setTeams} onRefreshUsers={refreshUserRows} />}
-        {tab === 'ligas' && <LigasTab leagues={leagues} onLeaguesChange={setLeagues} />}
+        {tab === 'ligas' && <LigasTab leagues={leagues} teams={teams} onLeaguesChange={setLeagues} />}
         {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
         {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
         {tab === 'usuarios' && <UsuariosTab rows={userRows} loading={loadingUserRows} currentUserId={user?.id} onRowsChange={setUserRows} />}
