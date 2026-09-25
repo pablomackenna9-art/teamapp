@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { SponsorBanner } from '@/components/SponsorBanner'
@@ -14,9 +13,9 @@ export function StandingsPage() {
   const resolvedTeamName = teamName || 'Maestros'
 
   const activeCategories = categories.length > 0 ? categories : mockCategories
-  const [selectedCatId, setSelectedCatId] = useState<string>(
-    activeCategoryId ?? (activeCategories[0]?.id ?? '')
-  )
+  // Categoría seleccionada globalmente (pastillas de CategoryNav, arriba del
+  // hero) — con fallback a la primera si todavía no se eligió ninguna.
+  const selectedCatId = activeCategoryId ?? (activeCategories[0]?.id ?? '')
 
   const pts = pointsPerWin[selectedCatId] ?? 3
   const rows = calculateStandings(fixtureMatches, selectedCatId, pts)
@@ -39,23 +38,6 @@ export function StandingsPage() {
 
       <div className="mb-3">
         <SponsorBanner sectionKey="standings" categoryId={selectedCatId} />
-      </div>
-
-      {/* Category tabs */}
-      <div className="flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
-        {activeCategories.map(cat => (
-          <button
-            key={cat.id}
-            onClick={() => setSelectedCatId(cat.id)}
-            className="shrink-0 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
-            style={selectedCatId === cat.id
-              ? { background: teamColor, color: '#030712' }
-              : { background: '#1f2937', color: '#9ca3af' }
-            }
-          >
-            {cat.name}
-          </button>
-        ))}
       </div>
 
       {/* Points per win config (admin only) */}

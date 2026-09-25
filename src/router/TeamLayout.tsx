@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { ShieldAlert, UserCheck, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CategoryNav } from '@/components/CategoryNav'
+import { BottomSectionNav } from '@/components/BottomSectionNav'
 import { TeamHeader } from '@/components/TeamHeader'
 import { DemoRoleSwitcher } from '@/components/DemoRoleSwitcher'
 import { Button } from '@/components/Button'
@@ -207,11 +208,12 @@ export function TeamLayout() {
       }}
     >
       {isDashboard && <TeamHeader />}
+      <CategoryNav />
       <main className="flex-1">
         <Outlet />
       </main>
       <DemoRoleSwitcher />
-      <CategoryNav />
+      <BottomSectionNav />
     </div>
   )
 }

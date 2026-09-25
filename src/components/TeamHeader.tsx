@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { Settings } from 'lucide-react'
+import { Bell, UserCircle2 } from 'lucide-react'
 import { useTeamStore } from '@/store/authStore'
 import { mockTeam } from '@/lib/mock'
 import { initials } from '@/lib/utils'
@@ -41,12 +41,22 @@ export function TeamHeader() {
             {roleLabel}
           </span>
         </div>
-        <button
-          onClick={() => navigate(`/team/${slug}/more`)}
-          className="w-9 h-9 rounded-full flex items-center justify-center border border-gray-800 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors shrink-0"
-        >
-          <Settings size={16} />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => navigate(`/team/${slug}/news`)}
+            className="w-9 h-9 rounded-full flex items-center justify-center border border-gray-800 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            aria-label="Noticias"
+          >
+            <Bell size={16} />
+          </button>
+          <button
+            onClick={() => navigate(`/team/${slug}/more`)}
+            className="w-9 h-9 rounded-full flex items-center justify-center border border-gray-800 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            aria-label="Más"
+          >
+            <UserCircle2 size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Escudo grande + nombre del club */}
