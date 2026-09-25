@@ -853,52 +853,57 @@ function DashboardTab({ teams, leagues, categories, userRows, onGoTo }: {
         <StatCard value={withSponsor} label="con auspiciador" icon={Megaphone} accent="#2563eb" />
       </div>
 
-      <TeamsNeedingAttentionTable teams={teams} categories={categories} userRows={userRows} onGoTo={onGoTo} />
-
-      <RecentActivity items={activity} loading={loadingActivity} />
-
-      <div className="bg-white border border-gray-200 rounded-2xl px-4 mb-4">
-        <div className="flex items-center gap-2 py-3 border-b border-gray-100">
-          <Users2 size={14} className="text-blue-500" />
-          <span className="text-xs font-black tracking-wider text-gray-500 uppercase">
-            {search.trim() ? `Resultados (${filteredTeams.length})` : 'Equipos recientes'}
-          </span>
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
+        <div>
+          <TeamsNeedingAttentionTable teams={teams} categories={categories} userRows={userRows} onGoTo={onGoTo} />
+          <RecentActivity items={activity} loading={loadingActivity} />
         </div>
-        {filteredTeams.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-6">
-            {search.trim() ? 'Ningún equipo coincide con la búsqueda.' : 'Todavía no se creó ningún equipo.'}
-          </p>
-        ) : (search.trim() ? filteredTeams : filteredTeams.slice(0, 6)).map(t => (
-          <button
-            key={t.id}
-            onClick={() => onGoTo('equipos')}
-            className="w-full flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 text-left"
-          >
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: t.primary_color + '26', color: t.primary_color }}>
-              {t.logo_url ? <img src={t.logo_url} alt="" className="w-full h-full object-cover" /> : t.name[0]}
-            </div>
-            <span className="text-sm font-semibold text-gray-900 flex-1 truncate">{t.name}</span>
-            <span className="text-gray-400 text-xs shrink-0">{new Date(t.created_at).toLocaleDateString('es-CL')}</span>
-          </button>
-        ))}
-      </div>
 
-      <div className="bg-white border border-gray-200 rounded-2xl px-4">
-        <div className="flex items-center gap-2 py-3 border-b border-gray-100">
-          <Trophy size={14} className="text-blue-500" />
-          <span className="text-xs font-black tracking-wider text-gray-500 uppercase">Ligas activas</span>
-        </div>
-        {leagues.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-6">Todavía no creaste ninguna liga.</p>
-        ) : leagues.map(l => {
-          const count = teams.filter(t => t.league_id === l.id).length
-          return (
-            <div key={l.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-              <span className="text-sm font-semibold text-gray-900">{l.name}</span>
-              <span className="text-gray-400 text-xs">{count} club{count !== 1 ? 'es' : ''}</span>
+        <div>
+          <div className="bg-white border border-gray-200 rounded-2xl px-4 mb-4">
+            <div className="flex items-center gap-2 py-3 border-b border-gray-100">
+              <Trophy size={14} className="text-blue-500" />
+              <span className="text-xs font-black tracking-wider text-gray-500 uppercase">Ligas activas</span>
             </div>
-          )
-        })}
+            {leagues.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-6">Todavía no creaste ninguna liga.</p>
+            ) : leagues.map(l => {
+              const count = teams.filter(t => t.league_id === l.id).length
+              return (
+                <div key={l.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                  <span className="text-sm font-semibold text-gray-900">{l.name}</span>
+                  <span className="text-gray-400 text-xs">{count} club{count !== 1 ? 'es' : ''}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-2xl px-4">
+            <div className="flex items-center gap-2 py-3 border-b border-gray-100">
+              <Users2 size={14} className="text-blue-500" />
+              <span className="text-xs font-black tracking-wider text-gray-500 uppercase">
+                {search.trim() ? `Resultados (${filteredTeams.length})` : 'Equipos recientes'}
+              </span>
+            </div>
+            {filteredTeams.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-6">
+                {search.trim() ? 'Ningún equipo coincide con la búsqueda.' : 'Todavía no se creó ningún equipo.'}
+              </p>
+            ) : (search.trim() ? filteredTeams : filteredTeams.slice(0, 6)).map(t => (
+              <button
+                key={t.id}
+                onClick={() => onGoTo('equipos')}
+                className="w-full flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 text-left"
+              >
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: t.primary_color + '26', color: t.primary_color }}>
+                  {t.logo_url ? <img src={t.logo_url} alt="" className="w-full h-full object-cover" /> : t.name[0]}
+                </div>
+                <span className="text-sm font-semibold text-gray-900 flex-1 truncate">{t.name}</span>
+                <span className="text-gray-400 text-xs shrink-0">{new Date(t.created_at).toLocaleDateString('es-CL')}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1253,7 +1258,7 @@ export function AdminPanelPage() {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 min-w-0 px-4 md:px-9 pt-28 md:pt-9 pb-16 max-w-4xl">
+      <main className="flex-1 min-w-0 px-4 md:px-9 pt-28 md:pt-9 pb-16 max-w-7xl">
         <div className="hidden md:flex items-center justify-between mb-1">
           <div>
             <h1 className="text-[26px] font-black text-gray-900">Panel de plataforma</h1>
