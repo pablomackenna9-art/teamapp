@@ -22,18 +22,34 @@ interface FixtureExcelImportProps {
   onImport: (matches: FixtureMatch[]) => void
 }
 
+// Anchored at noon UTC (not midnight) so formatting the result in any local
+// timezone — including ones behind UTC, like Chile — never rolls the
+// calendar day back to the previous day.
+function dateFromParts(year: number, month: number, day: number): string {
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString()
+}
+
 function excelDateToISO(value: unknown): string | null {
   if (value == null || value === '') return null
   if (typeof value === 'number') {
-    // Excel serial date → JS date
-    const epoch = new Date(Date.UTC(1899, 11, 30))
-    const ms = value * 86400000
-    return new Date(epoch.getTime() + ms).toISOString()
+    // Excel serial date (days since 1899-12-30)
+    const utcMidnight = new Date(Date.UTC(1899, 11, 30) + value * 86400000)
+    return dateFromParts(utcMidnight.getUTCFullYear(), utcMidnight.getUTCMonth() + 1, utcMidnight.getUTCDate())
   }
-  const parsed = new Date(String(value))
-  if (!isNaN(parsed.getTime())) return parsed.toISOString()
+  const str = String(value).trim()
+  // DD-MM-YYYY or DD/MM/YYYY (how Excel commonly displays date-typed cells
+  // read back as text, and how a human would type one in a CSV)
+  const dmy = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+  if (dmy) return dateFromParts(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]))
+  // YYYY-MM-DD
+  const ymd = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (ymd) return dateFromParts(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]))
+  const parsed = new Date(str)
+  if (!isNaN(parsed.getTime())) return dateFromParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate())
   return null
 }
+
+const BYE_MARKERS = ['libre', '-', 'descansa', 'bye']
 
 function parseRows(rows: unknown[][]): ParsedRow[] {
   if (rows.length < 2) return []
@@ -49,15 +65,19 @@ function parseRows(rows: unknown[][]): ParsedRow[] {
       const home_score = hsRaw !== '' ? parseInt(hsRaw, 10) : null
       const away_score = asRaw !== '' ? parseInt(asRaw, 10) : null
 
+      // A "fecha libre" row (bye week) has no real rival and no real date —
+      // valid on its own terms, doesn't need the usual date requirement.
+      const isBye = BYE_MARKERS.includes(home_team.toLowerCase()) || BYE_MARKERS.includes(away_team.toLowerCase())
+
       let error: string | undefined
       if (!home_team || !away_team) error = 'Faltan equipos'
       else if (isNaN(round)) error = 'Jornada inválida'
-      else if (!date) error = 'Fecha inválida'
+      else if (!date && !isBye) error = 'Fecha inválida'
 
       return {
         round: isNaN(round) ? 0 : round,
-        home_team,
-        away_team,
+        home_team: isBye ? 'Libre' : home_team,
+        away_team: isBye ? 'Libre' : away_team,
         date: date ?? new Date().toISOString(),
         home_score: home_score !== null && !isNaN(home_score) ? home_score : null,
         away_score: away_score !== null && !isNaN(away_score) ? away_score : null,

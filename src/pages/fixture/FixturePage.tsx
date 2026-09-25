@@ -330,6 +330,13 @@ export function FixturePage() {
 
             <div className="flex flex-col gap-2">
               {rounds[round].map(match => {
+                if (match.home_team === 'Libre' && match.away_team === 'Libre') {
+                  return (
+                    <div key={match.id} className="flex items-center justify-center py-3 rounded-2xl border border-dashed border-gray-800 text-gray-500 text-sm font-semibold">
+                      Fecha libre
+                    </div>
+                  )
+                }
                 const rc = resultColor(match)
                 const played = match.played && match.home_score !== null
 

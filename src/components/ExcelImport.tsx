@@ -17,13 +17,26 @@ interface ExcelImportProps {
   onImport: (players: ParsedPlayer[]) => Promise<void>
 }
 
+// Free-text positions from an imported spreadsheet ("Lateral Izquierdo",
+// "Central", "Volante", etc.) get bucketed into the app's 4 canonical
+// positions so filters and the roster badge stay consistent.
+function normalizePosition(raw: string): string {
+  const p = raw.trim().toLowerCase()
+  if (!p) return ''
+  if (/^(arquero|portero|golero|guardameta)/.test(p)) return 'Arquero'
+  if (/(lateral|central|zaguero|l[ií]bero|marcador|defensa|defensor)/.test(p)) return 'Defensor'
+  if (/(volante|mediocamp|enganche|conductor|mediapunta|interior)/.test(p)) return 'Mediocampista'
+  if (/(delantero|atacante|punta|goleador|extremo|wing)/.test(p)) return 'Delantero'
+  return raw.trim()
+}
+
 function parseRows(rows: string[][]): ParsedPlayer[] {
   if (rows.length < 2) return []
   // Skip header row (first row)
   return rows.slice(1)
     .map(cols => {
       const name = String(cols[0] ?? '').trim()
-      const position = String(cols[1] ?? '').trim()
+      const position = normalizePosition(String(cols[1] ?? ''))
       const number = String(cols[2] ?? '').trim()
       const valid = name.length > 1
       return { name, position, number, valid, error: !valid ? 'Nombre requerido' : undefined }
