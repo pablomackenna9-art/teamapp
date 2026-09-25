@@ -7,6 +7,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { isMockId } from '@/lib/storage'
 import { calculateStandings } from '@/lib/standings'
 import { ourMatches, lastPlayedFor, nextUpcomingFor, ourScore, theirScore, type DisplayMatch } from '@/lib/matches'
+import { loadTeamPlayerStats, type PlayerStatRow } from '@/lib/playerStats'
 import { mockTeam, mockStats } from '@/lib/mock'
 import type { Category, ComputedStanding, Title, Post, Photo } from '@/types'
 import { format } from 'date-fns'
@@ -408,16 +409,16 @@ function TitlesSection({ teamColor, categories, titles }: { teamColor: string; c
 }
 
 // ─── HOME VIEW ────────────────────────────────────────────────────────────────
-function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
-  slug: string; teamColor: string; teamName: string; isAdmin: boolean; isDemo: boolean
+function HomeView({ slug, teamColor, teamName, isAdmin, isDemo, realStats }: {
+  slug: string; teamColor: string; teamName: string; isAdmin: boolean; isDemo: boolean; realStats: Map<string, PlayerStatRow>
 }) {
   const navigate = useNavigate()
   const { categories, fixtureMatches, pointsPerWin, titles } = useTeamStore()
 
   const matches = ourMatches(fixtureMatches, teamName)
-  // Real per-player goal/assist stats aren't tracked yet for real clubs — only
-  // show the demo's sample ranking so a real club's home doesn't show fake data.
-  const topScorers = isDemo ? [...mockStats].sort((a, b) => b.goals - a.goals).slice(0, 5) : []
+  const topScorers = isDemo
+    ? [...mockStats].sort((a, b) => b.goals - a.goals).slice(0, 5)
+    : Array.from(realStats.values()).filter(s => s.goals > 0).sort((a, b) => b.goals - a.goals).slice(0, 5)
 
   return (
     <div className="flex flex-col gap-5 pb-6">
@@ -557,8 +558,9 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo }: {
 }
 
 // ─── CATEGORY VIEW ────────────────────────────────────────────────────────────
-function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo }: {
+function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, realStats, realPlayerCategoryId }: {
   slug: string; teamColor: string; teamName: string; isAdmin: boolean; categoryId: string; isDemo: boolean
+  realStats: Map<string, PlayerStatRow>; realPlayerCategoryId: Map<string, string | null>
 }) {
   const navigate = useNavigate()
   const currentYear = new Date().getFullYear()
@@ -572,11 +574,17 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo }
   const nextMatch = nextUpcomingFor(matches, categoryId)
   const standingsRows = calculateStandings(fixtureMatches, categoryId, pointsPerWin[categoryId] ?? 3)
 
-  // Real per-player goal/assist/MVP stats aren't tracked yet for real clubs.
-  const categoryPlayerIds = new Set(demoPlayers.filter(p => p.category_id === categoryId).map(p => p.id))
-  const categoryScorers = isDemo ? [...mockStats].filter(s => categoryPlayerIds.has(s.player_id)).sort((a, b) => b.goals - a.goals).slice(0, 5) : []
-  const categoryAssisters = isDemo ? [...mockStats].filter(s => categoryPlayerIds.has(s.player_id)).sort((a, b) => b.assists - a.assists).slice(0, 5) : []
-  const categoryMvps = isDemo ? [...mockStats].filter(s => categoryPlayerIds.has(s.player_id) && s.mvp_votes > 0).sort((a, b) => b.mvp_votes - a.mvp_votes).slice(0, 5) : []
+  const demoCategoryPlayerIds = new Set(demoPlayers.filter(p => p.category_id === categoryId).map(p => p.id))
+  const realCategoryStats = Array.from(realStats.values()).filter(s => realPlayerCategoryId.get(s.player_id) === categoryId)
+  const categoryScorers = isDemo
+    ? [...mockStats].filter(s => demoCategoryPlayerIds.has(s.player_id)).sort((a, b) => b.goals - a.goals).slice(0, 5)
+    : realCategoryStats.filter(s => s.goals > 0).sort((a, b) => b.goals - a.goals).slice(0, 5)
+  const categoryAssisters = isDemo
+    ? [...mockStats].filter(s => demoCategoryPlayerIds.has(s.player_id)).sort((a, b) => b.assists - a.assists).slice(0, 5)
+    : realCategoryStats.filter(s => s.assists > 0).sort((a, b) => b.assists - a.assists).slice(0, 5)
+  const categoryMvps = isDemo
+    ? [...mockStats].filter(s => demoCategoryPlayerIds.has(s.player_id) && s.mvp_votes > 0).sort((a, b) => b.mvp_votes - a.mvp_votes).slice(0, 5)
+    : realCategoryStats.filter(s => s.mvp_votes > 0).sort((a, b) => b.mvp_votes - a.mvp_votes).slice(0, 5)
 
   function MatchCard({ match, type }: { match: DisplayMatch | undefined; type: 'last' | 'next' }) {
     const isLast = type === 'last'
@@ -856,6 +864,16 @@ export function DashboardPage() {
   const resolvedTeamName = teamName || mockTeam.name
   const isDemo = !isSupabaseConfigured || isMockId(currentTeamId)
 
+  const [realStats, setRealStats] = useState<Map<string, PlayerStatRow>>(new Map())
+  const [realPlayerCategoryId, setRealPlayerCategoryId] = useState<Map<string, string | null>>(new Map())
+
+  useEffect(() => {
+    if (isDemo || !currentTeamId) { setRealStats(new Map()); return }
+    loadTeamPlayerStats(currentTeamId).then(setRealStats)
+    supabase.from('players').select('id, category_id').eq('team_id', currentTeamId)
+      .then(({ data }) => setRealPlayerCategoryId(new Map((data ?? []).map(p => [p.id, p.category_id]))))
+  }, [isDemo, currentTeamId])
+
   if (viewMode === 'category' && activeCategoryId) {
     return (
       <div className="max-w-lg mx-auto">
@@ -866,6 +884,8 @@ export function DashboardPage() {
           isAdmin={isAdmin}
           categoryId={activeCategoryId}
           isDemo={isDemo}
+          realStats={realStats}
+          realPlayerCategoryId={realPlayerCategoryId}
         />
       </div>
     )
@@ -873,7 +893,7 @@ export function DashboardPage() {
 
   return (
     <div className="max-w-lg mx-auto">
-      <HomeView slug={slug!} teamColor={teamColor} teamName={resolvedTeamName} isAdmin={isAdmin} isDemo={isDemo} />
+      <HomeView slug={slug!} teamColor={teamColor} teamName={resolvedTeamName} isAdmin={isAdmin} isDemo={isDemo} realStats={realStats} />
     </div>
   )
 }

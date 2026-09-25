@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Target, HandMetal, Square, Star, BarChart2, Users, Camera } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
+import { Button } from '@/components/Button'
 import { mockPlayers, mockStats, mockCategories } from '@/lib/mock'
-import { useTeamStore } from '@/store/authStore'
+import { useTeamStore, useAuthStore } from '@/store/authStore'
 import { initials } from '@/lib/utils'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { uploadTeamPhoto, isMockId } from '@/lib/storage'
+import { loadTeamPlayerStats, type PlayerStatRow } from '@/lib/playerStats'
 import type { Player } from '@/types'
 import toast from 'react-hot-toast'
 
 export function PlayerPage() {
   const { playerId } = useParams()
-  const { teamColor, currentTeamId, categories } = useTeamStore()
+  const navigate = useNavigate()
+  const { teamColor, currentTeamId, categories, memberRole } = useTeamStore()
+  const { user } = useAuthStore()
   const isDemo = !isSupabaseConfigured || isMockId(currentTeamId)
   const activeCategories = categories.length > 0 ? categories : mockCategories
 
@@ -20,12 +24,29 @@ export function PlayerPage() {
     isDemo ? (mockPlayers.find(p => p.id === playerId) ?? mockPlayers[0]) : null
   )
   const [loading, setLoading] = useState(!isDemo)
-  const stats = mockStats.find(s => s.player_id === player?.id)
+  const [realStats, setRealStats] = useState<PlayerStatRow | null>(null)
+  const stats = isDemo ? mockStats.find(s => s.player_id === player?.id) : realStats
+  const attendancePct: number | null = stats && 'attendance_pct' in stats ? (stats as { attendance_pct: number }).attendance_pct : null
   const category = activeCategories.find(c => c.id === player?.category_id)
+  const canEditPhoto = isDemo || (!!user && player?.user_id === user.id) || memberRole === 'admin' || memberRole === 'coordinador'
 
   const [photoUrl, setPhotoUrl] = useState<string | null>(player?.photo_url ?? null)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false)
+  const [unlinking, setUnlinking] = useState(false)
+
+  async function handleUnlink() {
+    if (!player) return
+    setUnlinking(true)
+    const { error } = await supabase.rpc('unlink_player', { p_player_id: player.id })
+    setUnlinking(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Ficha desvinculada')
+    const isSelf = user?.id === player.user_id
+    if (isSelf) navigate('/teams')
+    else setPlayer(p => p ? { ...p, user_id: null } : p)
+  }
 
   useEffect(() => {
     async function load() {
@@ -36,6 +57,11 @@ export function PlayerPage() {
       setPlayer(data)
       setPhotoUrl(data?.photo_url ?? null)
       setLoading(false)
+
+      if (data?.team_id && playerId) {
+        const teamStats = await loadTeamPlayerStats(data.team_id)
+        setRealStats(teamStats.get(playerId) ?? null)
+      }
     }
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,7 +82,7 @@ export function PlayerPage() {
     setUploading(true)
     try {
       const url = await uploadTeamPhoto(file, `${currentTeamId}/players/${player.id}`)
-      const { error } = await supabase.from('players').update({ photo_url: url }).eq('id', player.id)
+      const { error } = await supabase.rpc('player_set_photo', { p_player_id: player.id, p_photo_url: url })
       if (error) throw error
       setPhotoUrl(url)
       toast.success('Foto actualizada')
@@ -111,29 +137,33 @@ export function PlayerPage() {
             </div>
           )}
 
-          {/* Upload overlay */}
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold backdrop-blur transition-opacity"
-            style={{ background: '#00000070', color: '#fff' }}
-          >
-            {uploading ? (
-              <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Camera size={13} />
-            )}
-            {uploading ? 'Subiendo...' : 'Cambiar foto'}
-          </button>
+          {/* Upload overlay — only the linked player themselves or a club admin/coordinador can change it */}
+          {canEditPhoto && (
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold backdrop-blur transition-opacity"
+              style={{ background: '#00000070', color: '#fff' }}
+            >
+              {uploading ? (
+                <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Camera size={13} />
+              )}
+              {uploading ? 'Subiendo...' : 'Cambiar foto'}
+            </button>
+          )}
         </div>
 
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoChange(f) }}
-        />
+        {canEditPhoto && (
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoChange(f) }}
+          />
+        )}
 
         {/* Name and badges */}
         <div className="absolute bottom-3 left-3">
@@ -176,24 +206,59 @@ export function PlayerPage() {
           ))}
         </div>
 
-        {stats && (
+        {stats && attendancePct !== null && (
           <div className="rounded-2xl border border-gray-800 p-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Users size={14} className="text-gray-500" />
                 <p className="text-sm text-gray-400">Asistencia a partidos</p>
               </div>
-              <p className="font-black text-white">{stats.attendance_pct}%</p>
+              <p className="font-black text-white">{attendancePct}%</p>
             </div>
             <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${stats.attendance_pct}%`, background: teamColor }}
+                style={{ width: `${attendancePct}%`, background: teamColor }}
               />
             </div>
             <p className="text-gray-600 text-xs mt-1.5">
               {stats.matches_played} partido{stats.matches_played !== 1 ? 's' : ''} jugado{stats.matches_played !== 1 ? 's' : ''}
             </p>
+          </div>
+        )}
+        {stats && attendancePct === null && (
+          <p className="text-gray-600 text-xs text-center py-2">
+            {stats.matches_played > 0
+              ? `${stats.matches_played} partido${stats.matches_played !== 1 ? 's' : ''} confirmado${stats.matches_played !== 1 ? 's' : ''}`
+              : 'Sin estadísticas de partidos todavía'}
+          </p>
+        )}
+        {!stats && (
+          <p className="text-gray-600 text-xs text-center py-2">Sin estadísticas todavía</p>
+        )}
+
+        {!isDemo && canEditPhoto && player.user_id && (
+          <div className="mt-6">
+            {!confirmingUnlink ? (
+              <button
+                onClick={() => setConfirmingUnlink(true)}
+                className="w-full text-center text-xs text-gray-600 hover:text-red-400 py-2"
+              >
+                ¿No sos este jugador? Desvincular ficha
+              </button>
+            ) : (
+              <div className="rounded-2xl border border-red-900/50 bg-red-950/20 p-4">
+                <p className="text-red-300 text-sm font-semibold mb-1">¿Desvincular esta ficha?</p>
+                <p className="text-gray-400 text-xs mb-3">
+                  La ficha, sus estadísticas y fotos se conservan tal cual. Solo se quita la conexión entre tu cuenta y esta ficha —
+                  vas a dejar de poder actuar como {player.name}. Podés pedirle a tu coordinador que te vincule a la ficha correcta después.
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" fullWidth onClick={() => setConfirmingUnlink(false)}>Cancelar</Button>
+                  <Button variant="danger" size="sm" fullWidth loading={unlinking} onClick={handleUnlink}>Desvincular</Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

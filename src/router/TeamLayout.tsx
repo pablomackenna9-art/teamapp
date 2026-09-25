@@ -1,13 +1,92 @@
 import { Outlet, useParams, useLocation, Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { ShieldAlert, UserCheck, Check } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { CategoryNav } from '@/components/CategoryNav'
 import { TeamHeader } from '@/components/TeamHeader'
 import { DemoRoleSwitcher } from '@/components/DemoRoleSwitcher'
+import { Button } from '@/components/Button'
 import { useAuthStore, useTeamStore } from '@/store/authStore'
 import { useDemoStore } from '@/store/demoStore'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { mockTeam } from '@/lib/mock'
+
+interface PublicPlayer { id: string; name: string; number: number | null; category_name: string | null; already_linked: boolean }
+
+// Shown to a logged-in user who opened a club's public link but isn't a
+// member and has no invite — lets them say "soy jugador de este equipo" by
+// picking themselves from the roster; a coordinador approves it before the
+// account is actually linked to that ficha.
+function SoyJugadorPanel({ teamId }: { teamId: string }) {
+  const { user } = useAuthStore()
+  const [open, setOpen] = useState(false)
+  const [players, setPlayers] = useState<PublicPlayer[] | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  async function loadPlayers() {
+    setOpen(true)
+    if (players) return
+    const { data, error } = await supabase.rpc('list_team_players_public', { p_team_id: teamId })
+    if (error) { toast.error(error.message); return }
+    setPlayers(data ?? [])
+  }
+
+  async function handleSend() {
+    if (!selected) return
+    setSending(true)
+    const { error } = await supabase.rpc('request_player_link', { p_player_id: selected })
+    setSending(false)
+    if (error) { toast.error(error.message); return }
+    setSent(true)
+  }
+
+  if (!user) return null
+
+  if (sent) {
+    return (
+      <p className="text-green-400 text-sm mt-4 flex items-center gap-2">
+        <Check size={16} /> Solicitud enviada — el coordinador la va a revisar.
+      </p>
+    )
+  }
+
+  if (!open) {
+    return (
+      <button onClick={loadPlayers} className="mt-4 flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--team-color)' }}>
+        <UserCheck size={16} /> Soy jugador de este equipo
+      </button>
+    )
+  }
+
+  return (
+    <div className="w-full max-w-xs text-left">
+      <p className="text-gray-400 text-xs mb-2">Elegí tu ficha en el plantel:</p>
+      {!players ? (
+        <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-gray-700 rounded-full animate-spin" /></div>
+      ) : (
+        <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto mb-3">
+          {players.filter(p => !p.already_linked).map(p => (
+            <button
+              key={p.id}
+              onClick={() => setSelected(p.id)}
+              className="flex items-center gap-2 p-2.5 rounded-xl border text-left"
+              style={selected === p.id ? { borderColor: 'var(--team-color)', background: 'var(--team-color-dim)' } : { borderColor: '#1f2937' }}
+            >
+              <span className="text-sm text-white flex-1">{p.name}{p.number != null && ` #${p.number}`}</span>
+              {p.category_name && <span className="text-xs text-gray-500">{p.category_name}</span>}
+            </button>
+          ))}
+          {players.filter(p => !p.already_linked).length === 0 && (
+            <p className="text-gray-600 text-xs text-center py-2">No hay fichas sin vincular en este club.</p>
+          )}
+        </div>
+      )}
+      <Button fullWidth size="sm" disabled={!selected} loading={sending} onClick={handleSend}>Enviar solicitud</Button>
+    </div>
+  )
+}
 
 export function TeamLayout() {
   const { slug } = useParams<{ slug: string }>()
@@ -16,6 +95,7 @@ export function TeamLayout() {
   const { setCurrentTeam, setCategories, clearTeam } = useTeamStore()
   const [ready, setReady] = useState(false)
   const [denied, setDenied] = useState(false)
+  const [deniedTeamId, setDeniedTeamId] = useState<string | null>(null)
 
   // Only show the header on the dashboard (root team path)
   const isDashboard = location.pathname === `/team/${slug}`
@@ -61,6 +141,7 @@ export function TeamLayout() {
       if (!member && !platformAdmin) {
         // Not a member of this team and not a platform admin — no access
         setDenied(true)
+        setDeniedTeamId(team.id)
         setReady(true)
         return
       }
@@ -104,6 +185,7 @@ export function TeamLayout() {
         <Link to="/teams" className="mt-3 text-sm font-semibold" style={{ color: 'var(--team-color)' }}>
           Volver a mis equipos
         </Link>
+        {deniedTeamId && <SoyJugadorPanel teamId={deniedTeamId} />}
       </div>
     )
   }

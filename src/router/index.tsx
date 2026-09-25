@@ -5,6 +5,7 @@ import { AuthLayout } from './AuthLayout'
 
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
+import { InvitePage } from '@/pages/auth/InvitePage'
 import { TeamsPage } from '@/pages/team/TeamsPage'
 import { NewTeamPage } from '@/pages/team/NewTeamPage'
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
           { path: 'register', element: <RegisterPage /> },
         ],
       },
+      { path: 'invite/:inviteId', element: <InvitePage /> },
       { path: 'teams', element: <TeamsPage /> },
       { path: 'teams/new', element: <NewTeamPage /> },
       { path: 'rankings', element: <RankingsPage /> },

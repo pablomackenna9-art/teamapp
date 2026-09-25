@@ -271,6 +271,76 @@ function CategorySponsorRow({ category, teamId, isDemo }: {
   )
 }
 
+interface LinkRequestRow { id: string; player_id: string; player_name: string; user_email: string; created_at: string }
+
+// Coordinador-only: approve/reject "soy jugador de este equipo" self-serve
+// requests before the account actually gets linked to that ficha.
+function PendingLinkRequests({ teamId }: { teamId: string }) {
+  const [requests, setRequests] = useState<LinkRequestRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('list_pending_link_requests', { p_team_id: teamId })
+    if (error) { toast.error(error.message); setLoading(false); return }
+    setRequests(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [teamId])
+
+  async function handleApprove(req: LinkRequestRow) {
+    setBusyId(req.id)
+    const { error } = await supabase.rpc('approve_player_link_request', { p_request_id: req.id })
+    setBusyId(null)
+    if (error) { toast.error(error.message); return }
+    toast.success(`${req.user_email} vinculado a ${req.player_name}`)
+    setRequests(prev => prev.filter(r => r.id !== req.id))
+  }
+
+  async function handleReject(req: LinkRequestRow) {
+    setBusyId(req.id)
+    const { error } = await supabase.rpc('reject_player_link_request', { p_request_id: req.id })
+    setBusyId(null)
+    if (error) { toast.error(error.message); return }
+    setRequests(prev => prev.filter(r => r.id !== req.id))
+  }
+
+  if (loading || requests.length === 0) return null
+
+  return (
+    <div className="mx-4 mb-3">
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1">Solicitudes de vinculación</p>
+      <Card padding={false} className="px-4">
+        {requests.map(req => (
+          <div key={req.id} className="py-3 border-b border-gray-800 last:border-0">
+            <p className="text-sm text-white font-semibold">{req.user_email}</p>
+            <p className="text-gray-500 text-xs mb-2">dice ser: {req.player_name}</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleApprove(req)}
+                disabled={busyId === req.id}
+                className="flex-1 py-2 rounded-xl text-xs font-bold"
+                style={{ background: '#22c55e20', color: '#22c55e' }}
+              >
+                Aprobar
+              </button>
+              <button
+                onClick={() => handleReject(req)}
+                disabled={busyId === req.id}
+                className="flex-1 py-2 rounded-xl text-xs font-bold bg-gray-800 text-gray-400"
+              >
+                Rechazar
+              </button>
+            </div>
+          </div>
+        ))}
+      </Card>
+    </div>
+  )
+}
+
 function SponsorsManager({ teamId, isDemo }: { teamId: string | null; isDemo: boolean }) {
   const categories = useTeamStore(s => s.categories)
 
@@ -449,6 +519,11 @@ export function MorePage() {
             </p>
           )}
         </div>
+      )}
+
+      {/* Pending "soy jugador de este equipo" requests — coordinador only */}
+      {isAdmin && !isDemo && currentTeamId && (
+        <PendingLinkRequests teamId={currentTeamId} />
       )}
 
       {/* Sponsors — platform super admin only */}

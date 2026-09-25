@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -18,6 +18,8 @@ type FormData = z.infer<typeof schema>
 
 export function RegisterPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const redirectTo = (location.state as { from?: string } | null)?.from
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
 
@@ -40,7 +42,7 @@ export function RegisterPage() {
     await supabase.auth.signOut()
     setLoading(false)
     toast.success('¡Cuenta creada! Iniciá sesión para continuar.')
-    navigate('/login')
+    navigate('/login', redirectTo ? { state: { from: redirectTo } } : undefined)
   }
 
   return (
@@ -94,7 +96,7 @@ export function RegisterPage() {
 
       <p className="text-center text-gray-500 text-sm mt-6">
         ¿Ya tenés cuenta?{' '}
-        <Link to="/login" className="font-medium" style={{ color: 'var(--team-color)' }}>
+        <Link to="/login" state={redirectTo ? { from: redirectTo } : undefined} className="font-medium" style={{ color: 'var(--team-color)' }}>
           Iniciá sesión
         </Link>
       </p>

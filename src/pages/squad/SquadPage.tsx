@@ -312,11 +312,22 @@ export function SquadPage() {
     }).select().single()
     if (error) { toast.error(error.message); return }
     if (data.email && player) {
-      // Pending invite — claimed automatically the moment this email logs in
-      const { error: inviteError } = await supabase.from('team_invites').insert({
+      // Pending invite — the person confirms it's them (see /invite/:id)
+      // before the account actually gets linked to this ficha.
+      const { data: invite, error: inviteError } = await supabase.from('team_invites').insert({
         team_id: currentTeamId, email: data.email, role: 'player', player_id: player.id,
-      })
-      if (inviteError) toast.error('Jugador agregado, pero no se pudo vincular el correo: ' + inviteError.message)
+      }).select().single()
+      if (inviteError) {
+        toast.error('Jugador agregado, pero no se pudo crear la invitación: ' + inviteError.message)
+      } else if (invite) {
+        const link = `${window.location.origin}/invite/${invite.id}`
+        try {
+          await navigator.clipboard.writeText(link)
+          toast.success('Jugador agregado — link de invitación copiado, mandaselo por WhatsApp', { duration: 5000 })
+        } catch {
+          toast.success(`Jugador agregado. Invitación: ${link}`, { duration: 8000 })
+        }
+      }
     }
     toast.success('Jugador agregado')
     loadPlayers()

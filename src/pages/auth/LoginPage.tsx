@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -17,6 +17,8 @@ type FormData = z.infer<typeof schema>
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const redirectTo = (location.state as { from?: string } | null)?.from || '/teams'
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
 
@@ -27,7 +29,7 @@ export function LoginPage() {
     if (error) {
       toast.error(error.message)
     } else {
-      navigate('/teams')
+      navigate(redirectTo)
     }
   }
 
@@ -71,7 +73,7 @@ export function LoginPage() {
 
       <p className="text-center text-gray-500 text-sm mt-6">
         ¿No tenés cuenta?{' '}
-        <Link to="/register" className="font-medium" style={{ color: 'var(--team-color)' }}>
+        <Link to="/register" state={{ from: redirectTo }} className="font-medium" style={{ color: 'var(--team-color)' }}>
           Registrate
         </Link>
       </p>
