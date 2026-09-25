@@ -92,7 +92,7 @@ export function TeamLayout() {
   const { slug } = useParams<{ slug: string }>()
   const location = useLocation()
   const { user } = useAuthStore()
-  const { setCurrentTeam, setCategories, clearTeam } = useTeamStore()
+  const { setCurrentTeam, setCategories, clearTeam, teamColor } = useTeamStore()
   const [ready, setReady] = useState(false)
   const [denied, setDenied] = useState(false)
   const [deniedTeamId, setDeniedTeamId] = useState<string | null>(null)
@@ -192,7 +192,20 @@ export function TeamLayout() {
   }
 
   return (
-    <div className="flex flex-col min-h-dvh" style={{ paddingBottom: '72px' }}>
+    <div
+      className="flex flex-col min-h-dvh"
+      style={{
+        paddingBottom: '72px',
+        // A vivid, full-page backdrop in the club's own color on the two
+        // "landing" screens (Inicio/Tabla) — a flat dark background reads as
+        // plain black for pale team colors, so this blends a strong wash of
+        // the color into a dark navy base instead of relying on low opacity
+        // over near-black.
+        background: isDashboard
+          ? `linear-gradient(180deg, ${teamColor}55 0%, #0a1020 340px, #05070d 100%)`
+          : undefined,
+      }}
+    >
       {isDashboard && <TeamHeader />}
       <main className="flex-1">
         <Outlet />

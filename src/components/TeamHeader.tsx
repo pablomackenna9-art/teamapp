@@ -29,10 +29,7 @@ export function TeamHeader() {
   const roleColor = memberRole === 'admin' ? '#f59e0b' : memberRole === 'captain' ? '#3b82f6' : memberRole === 'dt' || memberRole === 'coordinador' ? '#a855f7' : teamColor
 
   return (
-    <div
-      className="relative px-4 pt-5 pb-6 mb-1 overflow-hidden"
-      style={{ background: `radial-gradient(120% 100% at 50% -10%, ${teamColor}33 0%, #0b0f0d 60%)` }}
-    >
+    <div className="relative px-4 pt-5 pb-6 mb-1 overflow-hidden">
       {/* Top row: greeting + settings */}
       <div className="relative flex items-center justify-between mb-4">
         <div>
