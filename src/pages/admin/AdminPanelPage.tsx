@@ -714,13 +714,17 @@ function AuspiciadoresTab({ teams, leagues, categories, onCategoriesChange }: {
 }
 
 // ── DASHBOARD TAB ───────────────────────────────────────────────────────────
-function StatCard({ value, label, accent }: { value: number; label: string; accent: string }) {
+function StatCard({ value, label, icon: Icon, accent }: { value: number; label: string; icon: typeof Users2; accent: string }) {
   return (
-    <Card className="relative overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: accent }} />
-      <p className="text-3xl font-black text-white">{value}</p>
-      <p className="text-gray-500 text-sm mt-0.5">{label}</p>
-    </Card>
+    <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-white border border-gray-200">
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: accent + '1f' }}>
+        <Icon size={20} style={{ color: accent }} />
+      </div>
+      <div>
+        <p className="text-2xl font-black text-gray-900 leading-none">{value}</p>
+        <p className="text-gray-500 text-xs mt-1">{label}</p>
+      </div>
+    </div>
   )
 }
 
@@ -744,55 +748,55 @@ function TeamsNeedingAttentionTable({ teams, categories, userRows, onGoTo }: {
   if (rows.length === 0) return null
 
   return (
-    <Card padding={false} className="px-4 mb-4">
-      <div className="flex items-center justify-between py-3 border-b border-gray-800">
+    <div className="bg-white border border-gray-200 rounded-2xl px-4 mb-4">
+      <div className="flex items-center justify-between py-3 border-b border-gray-100">
         <div className="flex items-center gap-2">
-          <AlertTriangle size={14} className="text-amber-400" />
-          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Equipos que requieren atención</span>
+          <AlertTriangle size={14} className="text-amber-500" />
+          <span className="text-xs font-black tracking-wider text-gray-500 uppercase">Equipos que requieren atención</span>
         </div>
-        <span className="text-xs text-gray-500">{rows.length}</span>
+        <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{rows.length}</span>
       </div>
       {rows.slice(0, 6).map(({ team, flags }) => (
-        <div key={team.id} className="flex items-center gap-3 py-3 border-b border-gray-800/50 last:border-0">
+        <div key={team.id} className="flex items-center gap-3 py-3 border-b border-gray-100 last:border-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: team.primary_color + '26', color: team.primary_color }}>
             {team.logo_url ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" /> : team.name[0]}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-white truncate">{team.name}</p>
+            <p className="text-sm font-semibold text-gray-900 truncate">{team.name}</p>
             <div className="flex gap-1 flex-wrap mt-0.5">
               {flags.map(f => (
-                <span key={f.label} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: f.color + '20', color: f.color }}>{f.label}</span>
+                <span key={f.label} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: f.color + '1a', color: f.color }}>{f.label}</span>
               ))}
             </div>
           </div>
           <button
             onClick={flags[0].onClick}
-            className="shrink-0 text-xs font-bold px-2.5 py-1.5 rounded-lg"
-            style={{ background: '#1f2937', color: '#e5e7eb' }}
+            className="shrink-0 text-xs font-bold px-2.5 py-1.5 rounded-lg text-white"
+            style={{ background: '#2563eb' }}
           >
             {flags[0].actionLabel}
           </button>
         </div>
       ))}
-    </Card>
+    </div>
   )
 }
 
 function RecentActivity({ items, loading }: { items: ActivityItem[]; loading: boolean }) {
   if (loading || items.length === 0) return null
   return (
-    <Card padding={false} className="px-4 mb-4">
-      <div className="flex items-center gap-2 py-3 border-b border-gray-800">
-        <BarChart3 size={14} className="text-blue-400" />
-        <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Actividad reciente</span>
+    <div className="bg-white border border-gray-200 rounded-2xl px-4 mb-4">
+      <div className="flex items-center gap-2 py-3 border-b border-gray-100">
+        <BarChart3 size={14} className="text-blue-500" />
+        <span className="text-xs font-black tracking-wider text-gray-500 uppercase">Actividad reciente</span>
       </div>
       {items.slice(0, 8).map(item => (
-        <div key={item.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-gray-800/40 last:border-0">
-          <p className="text-sm text-gray-300 truncate">{item.text}</p>
-          <span className="text-[10px] text-gray-600 shrink-0">{new Date(item.date).toLocaleDateString('es-CL')}</span>
+        <div key={item.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-gray-100 last:border-0">
+          <p className="text-sm text-gray-700 truncate">{item.text}</p>
+          <span className="text-[10px] text-gray-400 shrink-0">{new Date(item.date).toLocaleDateString('es-CL')}</span>
         </div>
       ))}
-    </Card>
+    </div>
   )
 }
 
@@ -833,69 +837,69 @@ function DashboardTab({ teams, leagues, categories, userRows, onGoTo }: {
   return (
     <div>
       <div className="relative mb-5">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Buscar equipo..."
-          className="w-full bg-gray-900 border border-gray-800 rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none"
+          placeholder="Buscar equipos, ligas, usuarios..."
+          className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-gray-900 placeholder-gray-400 text-sm outline-none"
         />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard value={teams.length} label="Equipos" accent="#22c55e" />
-        <StatCard value={leagues.length} label="Ligas" accent="#3b82f6" />
-        <StatCard value={categories.length} label="Categorías" accent="#a855f7" />
-        <StatCard value={withSponsor} label="Con auspiciador" accent="#f59e0b" />
+        <StatCard value={teams.length} label="equipos" icon={Users2} accent="#2563eb" />
+        <StatCard value={leagues.length} label="ligas" icon={Trophy} accent="#2563eb" />
+        <StatCard value={categories.length} label="categorías" icon={ShieldCheck} accent="#2563eb" />
+        <StatCard value={withSponsor} label="con auspiciador" icon={Megaphone} accent="#2563eb" />
       </div>
 
       <TeamsNeedingAttentionTable teams={teams} categories={categories} userRows={userRows} onGoTo={onGoTo} />
 
       <RecentActivity items={activity} loading={loadingActivity} />
 
-      <Card padding={false} className="px-4 mb-4">
-        <div className="flex items-center gap-2 py-3 border-b border-gray-800">
-          <Users2 size={14} className="text-green-400" />
-          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">
+      <div className="bg-white border border-gray-200 rounded-2xl px-4 mb-4">
+        <div className="flex items-center gap-2 py-3 border-b border-gray-100">
+          <Users2 size={14} className="text-blue-500" />
+          <span className="text-xs font-black tracking-wider text-gray-500 uppercase">
             {search.trim() ? `Resultados (${filteredTeams.length})` : 'Equipos recientes'}
           </span>
         </div>
         {filteredTeams.length === 0 ? (
-          <p className="text-gray-600 text-sm text-center py-6">
+          <p className="text-gray-400 text-sm text-center py-6">
             {search.trim() ? 'Ningún equipo coincide con la búsqueda.' : 'Todavía no se creó ningún equipo.'}
           </p>
         ) : (search.trim() ? filteredTeams : filteredTeams.slice(0, 6)).map(t => (
           <button
             key={t.id}
             onClick={() => onGoTo('equipos')}
-            className="w-full flex items-center gap-3 py-3 border-b border-gray-800/50 last:border-0 text-left"
+            className="w-full flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 text-left"
           >
             <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: t.primary_color + '26', color: t.primary_color }}>
               {t.logo_url ? <img src={t.logo_url} alt="" className="w-full h-full object-cover" /> : t.name[0]}
             </div>
-            <span className="text-sm font-semibold text-white flex-1 truncate">{t.name}</span>
-            <span className="text-gray-600 text-xs shrink-0">{new Date(t.created_at).toLocaleDateString('es-CL')}</span>
+            <span className="text-sm font-semibold text-gray-900 flex-1 truncate">{t.name}</span>
+            <span className="text-gray-400 text-xs shrink-0">{new Date(t.created_at).toLocaleDateString('es-CL')}</span>
           </button>
         ))}
-      </Card>
+      </div>
 
-      <Card padding={false} className="px-4">
-        <div className="flex items-center gap-2 py-3 border-b border-gray-800">
-          <Trophy size={14} className="text-blue-400" />
-          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Ligas</span>
+      <div className="bg-white border border-gray-200 rounded-2xl px-4">
+        <div className="flex items-center gap-2 py-3 border-b border-gray-100">
+          <Trophy size={14} className="text-blue-500" />
+          <span className="text-xs font-black tracking-wider text-gray-500 uppercase">Ligas activas</span>
         </div>
         {leagues.length === 0 ? (
-          <p className="text-gray-600 text-sm text-center py-6">Todavía no creaste ninguna liga.</p>
+          <p className="text-gray-400 text-sm text-center py-6">Todavía no creaste ninguna liga.</p>
         ) : leagues.map(l => {
           const count = teams.filter(t => t.league_id === l.id).length
           return (
-            <div key={l.id} className="flex items-center justify-between py-3 border-b border-gray-800/50 last:border-0">
-              <span className="text-sm font-semibold text-white">{l.name}</span>
-              <span className="text-gray-500 text-xs">{count} club{count !== 1 ? 'es' : ''}</span>
+            <div key={l.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+              <span className="text-sm font-semibold text-gray-900">{l.name}</span>
+              <span className="text-gray-400 text-xs">{count} club{count !== 1 ? 'es' : ''}</span>
             </div>
           )
         })}
-      </Card>
+      </div>
     </div>
   )
 }
@@ -1196,42 +1200,41 @@ export function AdminPanelPage() {
   const currentLabel = TABS.find(t => t.key === tab)?.label ?? ''
 
   return (
-    <div className="min-h-dvh flex" style={{ background: '#0b1220' }}>
+    <div className="min-h-dvh flex" style={{ background: '#f3f5f8' }}>
       {/* Sidebar */}
-      <aside className="hidden md:flex md:w-64 md:flex-col shrink-0 border-r border-gray-800 px-4 py-6">
-        <div className="flex items-center gap-2 mb-1 px-2">
-          <span className="text-2xl">👑</span>
+      <aside className="hidden md:flex md:w-60 md:flex-col shrink-0 px-3.5 py-5" style={{ background: '#0b1220' }}>
+        <div className="flex items-center gap-2.5 mb-7 px-2">
+          <div className="w-8 h-8 rounded-[10px] flex items-center justify-center text-base shrink-0" style={{ background: '#2563eb' }}>🏆</div>
           <div>
-            <p className="text-white font-bold leading-tight">TeamApp</p>
-            <p className="text-gray-500 text-xs leading-tight">Panel interno</p>
+            <p className="text-white font-black text-sm leading-tight">TeamApp</p>
+            <p className="text-gray-500 text-[9px] tracking-wider leading-tight">PLATAFORMA ADMIN</p>
           </div>
         </div>
-        <p className="text-gray-600 text-[11px] px-2 mb-6">Gestión de la plataforma</p>
-        <nav className="flex flex-col gap-1 flex-1">
+        <nav className="flex flex-col gap-0.5 flex-1">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => setTab(key)}
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-colors"
-              style={tab === key ? { background: '#22c55e1a', color: '#22c55e' } : { color: '#9ca3af' }}
+              className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-[10px] text-[13.5px] font-semibold text-left transition-colors"
+              style={tab === key ? { background: '#1d2739', color: '#fff' } : { color: '#94a3b8' }}
             >
-              <Icon size={16} /> {label}
+              <Icon size={16} color={tab === key ? '#60a5fa' : undefined} /> {label}
             </button>
           ))}
         </nav>
-        <button onClick={handleSignOut} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-left text-gray-500 hover:text-red-400">
+        <button onClick={handleSignOut} className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-[10px] text-[13.5px] font-semibold text-left text-gray-500 hover:text-red-400">
           <LogOut size={16} /> Cerrar sesión
         </button>
       </aside>
 
       {/* Mobile top selector */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-gray-900 border-b border-gray-800 px-4 pt-3 pb-2">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-white border-b border-gray-200 px-4 pt-3 pb-2">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xl">👑</span>
-            <p className="text-white font-bold text-sm truncate">Hola{displayName ? `, ${displayName}` : ''}</p>
+            <span className="text-xl">🏆</span>
+            <p className="text-gray-900 font-bold text-sm truncate">Hola{displayName ? `, ${displayName}` : ''}</p>
           </div>
-          <button onClick={handleSignOut} className="flex items-center gap-1 text-gray-400 hover:text-red-400 text-xs font-semibold shrink-0">
+          <button onClick={handleSignOut} className="flex items-center gap-1 text-gray-400 hover:text-red-500 text-xs font-semibold shrink-0">
             <LogOut size={14} /> Salir
           </button>
         </div>
@@ -1241,7 +1244,7 @@ export function AdminPanelPage() {
               key={key}
               onClick={() => setTab(key)}
               className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors"
-              style={tab === key ? { background: '#22c55e', color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+              style={tab === key ? { background: '#2563eb', color: '#fff' } : { background: '#f1f5f9', color: '#64748b' }}
             >
               <Icon size={13} /> {label}
             </button>
@@ -1250,22 +1253,42 @@ export function AdminPanelPage() {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 min-w-0 px-4 md:px-8 pt-28 md:pt-8 pb-16 max-w-4xl">
+      <main className="flex-1 min-w-0 px-4 md:px-9 pt-28 md:pt-9 pb-16 max-w-4xl">
         <div className="hidden md:flex items-center justify-between mb-1">
-          <h1 className="text-2xl font-bold text-white">Hola{displayName ? `, ${displayName}` : ''} 👋</h1>
-          <button onClick={handleSignOut} className="flex items-center gap-1.5 text-gray-400 hover:text-red-400 text-sm font-semibold shrink-0">
-            <LogOut size={16} /> Cerrar sesión
-          </button>
+          <div>
+            <h1 className="text-[26px] font-black text-gray-900">Panel de plataforma</h1>
+            <p className="text-gray-500 text-[13px] mt-0.5">{currentLabel} — resumen general de la actividad en TeamApp.</p>
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white shrink-0" style={{ background: '#2563eb' }}>
+                {(displayName || user?.email || '?').slice(0, 2).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-gray-900 text-xs font-bold leading-tight">{displayName || user?.email}</p>
+                <p className="text-gray-400 text-[10px] leading-tight">Administrador</p>
+              </div>
+            </div>
+            <button onClick={handleSignOut} className="flex items-center gap-1.5 text-gray-400 hover:text-red-500 text-sm font-semibold shrink-0">
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
-        <p className="text-gray-500 text-sm mb-6 hidden md:block">{currentLabel} — TeamApp gestión de la plataforma</p>
-        <h1 className="text-2xl font-bold text-white mb-1 md:hidden">{currentLabel}</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1 md:hidden">{currentLabel}</h1>
 
-        {tab === 'dashboard' && <DashboardTab teams={teams} leagues={leagues} categories={categories} userRows={userRows} onGoTo={setTab} />}
-        {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} userRows={userRows} loading={loadingTeams} onTeamsChange={setTeams} onRefreshUsers={refreshUserRows} />}
-        {tab === 'ligas' && <LigasTab leagues={leagues} teams={teams} onLeaguesChange={setLeagues} />}
-        {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
-        {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
-        {tab === 'usuarios' && <UsuariosTab rows={userRows} loading={loadingUserRows} currentUserId={user?.id} onRowsChange={setUserRows} />}
+        <div className="mt-6 md:mt-6">
+          {tab === 'dashboard' ? (
+            <DashboardTab teams={teams} leagues={leagues} categories={categories} userRows={userRows} onGoTo={setTab} />
+          ) : (
+            <div className="rounded-2xl p-4 md:p-6" style={{ background: '#0b1220' }}>
+              {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} userRows={userRows} loading={loadingTeams} onTeamsChange={setTeams} onRefreshUsers={refreshUserRows} />}
+              {tab === 'ligas' && <LigasTab leagues={leagues} teams={teams} onLeaguesChange={setLeagues} />}
+              {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
+              {tab === 'rankings' && <RankingsPage embedded leagues={leagues} />}
+              {tab === 'usuarios' && <UsuariosTab rows={userRows} loading={loadingUserRows} currentUserId={user?.id} onRowsChange={setUserRows} />}
+            </div>
+          )}
+        </div>
       </main>
     </div>
   )

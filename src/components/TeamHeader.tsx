@@ -2,7 +2,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Bell, UserCircle2 } from 'lucide-react'
 import { useTeamStore } from '@/store/authStore'
 import { mockTeam } from '@/lib/mock'
-import { initials } from '@/lib/utils'
+import { initials, vividDark } from '@/lib/utils'
 
 function getGreeting() {
   const h = new Date().getHours()
@@ -30,13 +30,16 @@ export function TeamHeader() {
 
   return (
     <div className="relative px-4 pt-5 pb-6 mb-1 overflow-hidden">
-      {/* Decorative stadium-lights backdrop — two soft spotlight cones + a
-          faint crowd-texture dot pattern, purely visual, same for every
-          club (no fabricated club-specific photo/content). */}
+      {/* Decorative stadium-lights backdrop — team-colored glow + spotlight
+          cones + a crowd-texture dot pattern, purely visual, same layout for
+          every club (no fabricated club-specific photo/content). */}
       <div className="absolute inset-0 pointer-events-none" aria-hidden>
-        <div className="absolute -top-10 left-1/4 w-40 h-56 opacity-20" style={{ background: `conic-gradient(from 200deg at 50% 0%, transparent, #ffffff, transparent 40%)`, filter: 'blur(2px)' }} />
-        <div className="absolute -top-10 right-1/4 w-40 h-56 opacity-20" style={{ background: `conic-gradient(from 160deg at 50% 0%, transparent 60%, #ffffff, transparent)`, filter: 'blur(2px)' }} />
-        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(#ffffff22 1px, transparent 1px)', backgroundSize: '10px 10px', maskImage: 'linear-gradient(180deg, black, transparent)' }} />
+        <div className="absolute inset-0" style={{ background: `radial-gradient(130% 100% at 30% -10%, ${vividDark(teamColor, 32, 70)}, transparent 62%), radial-gradient(110% 90% at 85% 5%, rgba(59,130,246,0.32), transparent 58%)` }} />
+        <div className="absolute -top-10 left-[10%] w-40 h-60" style={{ background: `conic-gradient(from 205deg at 50% 0%, transparent, rgba(255,255,255,0.28), transparent 32%)`, filter: 'blur(2px)' }} />
+        <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-36 h-56" style={{ background: `conic-gradient(from 180deg at 50% 0%, transparent 40%, rgba(255,255,255,0.16), transparent 60%)`, filter: 'blur(2px)' }} />
+        <div className="absolute -top-10 right-[8%] w-40 h-60" style={{ background: `conic-gradient(from 155deg at 50% 0%, transparent 65%, rgba(255,255,255,0.28), transparent)`, filter: 'blur(2px)' }} />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.09) 1.2px, transparent 1.2px)', backgroundSize: '13px 13px', maskImage: 'radial-gradient(ellipse at 30% 10%, black 45%, transparent 80%)' }} />
+        <div className="absolute inset-0" style={{ boxShadow: 'inset 0 -60px 60px -20px #0a0e14' }} />
       </div>
 
       {/* Top row: greeting + settings */}
