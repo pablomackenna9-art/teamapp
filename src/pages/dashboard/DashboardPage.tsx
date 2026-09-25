@@ -595,7 +595,15 @@ function NextMatchHero({ teamColor, teamLogoUrl, teamName, categoryName, nextMat
     toast.success('Asistencia actualizada')
   }
 
-  if (!nextMatch) return null
+  if (!nextMatch) {
+    return (
+      <div className="mx-4 rounded-2xl border border-dashed border-gray-700 p-5 text-center">
+        <Calendar size={20} className="mx-auto text-gray-600 mb-2" />
+        <p className="text-gray-400 text-sm font-semibold">Sin próximo partido cargado</p>
+        <p className="text-gray-600 text-xs mt-0.5">{categoryName}</p>
+      </div>
+    )
+  }
 
   const dateObj = new Date(nextMatch.date)
 

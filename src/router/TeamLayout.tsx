@@ -161,12 +161,27 @@ export function TeamLayout() {
       setCurrentTeam(team.slug, team.id, member?.role ?? 'admin', team.primary_color, team.logo_url, team.name, team.sponsor_url)
       setCategories(cats ?? [])
       useTeamStore.setState({ fixtureMatches: matches ?? [], pointsPerWin, titles: titles ?? [] })
+
+      // Remember the last category picked for THIS club, so a reload lands
+      // back on it instead of always resetting to Inicio general.
+      const savedCategoryId = localStorage.getItem(`teamapp:lastCategory:${slug}`)
+      if (savedCategoryId && (cats ?? []).some(c => c.id === savedCategoryId)) {
+        useTeamStore.setState({ activeCategoryId: savedCategoryId, viewMode: 'category' })
+      }
+
       setReady(true)
     }
 
     loadTeam()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug])
+
+  // Persist whichever category is active for this club whenever it changes.
+  const activeCategoryId = useTeamStore(s => s.activeCategoryId)
+  useEffect(() => {
+    if (!slug) return
+    if (activeCategoryId) localStorage.setItem(`teamapp:lastCategory:${slug}`, activeCategoryId)
+  }, [slug, activeCategoryId])
 
   if (!ready) {
     return (
@@ -198,13 +213,10 @@ export function TeamLayout() {
       className="flex flex-col min-h-dvh"
       style={{
         paddingBottom: '72px',
-        // A vivid backdrop in the club's own hue — alpha-blending the raw hex
-        // over black desaturated pale colors into a murky olive/gray, so this
-        // derives an actually-saturated dark tone from the color's hue
-        // instead (readable with white text no matter how pale the original).
-        background: isDashboard
-          ? `linear-gradient(180deg, ${vividDark(teamColor, 22)} 0%, ${vividDark(teamColor, 14)} 340px, ${vividDark(teamColor, 9)} 100%)`
-          : undefined,
+        // Same vivid, club-colored backdrop on every screen of the club (not
+        // just Inicio) so Plantel/Fixture/Noticias/Fotos/Tabla read as one
+        // coherent product instead of Inicio alone looking redesigned.
+        background: `linear-gradient(180deg, ${vividDark(teamColor, isDashboard ? 22 : 16)} 0%, ${vividDark(teamColor, 14)} 340px, ${vividDark(teamColor, 9)} 100%)`,
       }}
     >
       {isDashboard && <TeamHeader />}

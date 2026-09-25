@@ -65,10 +65,10 @@ export function StandingsPage() {
         <div className="rounded-2xl overflow-hidden border border-gray-800" style={{ background: '#0d1117' }}>
           {/* Header */}
           <div className="flex items-center px-3 py-2.5 border-b border-gray-800">
-            <span className="w-7 text-gray-600 text-[10px] font-bold text-center">#</span>
+            <span className="w-6 text-gray-600 text-[10px] font-bold text-center">#</span>
             <span className="flex-1 text-gray-600 text-[10px] font-bold ml-2">EQUIPO</span>
-            {['PTS', 'PJ', 'PG', 'PE', 'PP', 'GF', 'GC', 'DG'].map(h => (
-              <span key={h} className="w-7 text-center text-gray-600 text-[10px] font-bold">{h}</span>
+            {['PJ', 'DG', 'PTS'].map(h => (
+              <span key={h} className="w-10 text-center text-gray-600 text-[10px] font-bold">{h}</span>
             ))}
           </div>
 
@@ -97,34 +97,29 @@ export function StandingsPage() {
                 className="flex items-center px-3 py-3 border-b border-gray-800/40 last:border-0"
                 style={isUs ? { background: teamColor + '18' } : undefined}
               >
-                <div className="w-7 text-center">
+                <div className="w-6 text-center">
                   {i === 0
                     ? <span className="text-base">🥇</span>
                     : <span className="text-xs font-bold text-gray-500">{i + 1}</span>
                   }
                 </div>
                 <div className="flex-1 flex items-center gap-1.5 ml-2 min-w-0">
-                  {isUs && <span className="text-xs">⚽</span>}
+                  {isUs && <span className="text-xs shrink-0">⚽</span>}
                   <span
                     className="text-sm font-semibold truncate"
                     style={isUs ? { color: teamColor } : { color: '#f9fafb' }}
                   >
-                    {t.name} {isUs ? '(nosotros)' : ''}
+                    {t.name}
                   </span>
                 </div>
                 {[
+                  { val: t.played, bold: false },
+                  { val: dg > 0 ? `+${dg}` : dg, bold: false },
                   { val: t.points, bold: true },
-                  { val: t.played },
-                  { val: t.won },
-                  { val: t.drawn },
-                  { val: t.lost },
-                  { val: t.gf },
-                  { val: t.gc },
-                  { val: dg > 0 ? `+${dg}` : dg },
                 ].map(({ val, bold }, j) => (
                   <span
                     key={j}
-                    className="w-7 text-center text-xs"
+                    className="w-10 text-center text-xs"
                     style={bold
                       ? { color: teamColor, fontWeight: 900, fontSize: '13px' }
                       : { color: '#9ca3af' }
