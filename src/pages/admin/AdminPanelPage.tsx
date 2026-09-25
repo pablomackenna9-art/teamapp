@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3, LayoutDashboard, UserCog, ShieldCheck, LogOut, Link2 } from 'lucide-react'
+import { Plus, Shield, Trash2, X, AlertTriangle, Megaphone, ImagePlus, Check, Trophy, Users2, BarChart3, LayoutDashboard, UserCog, ShieldCheck, LogOut, Link2, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -724,14 +724,124 @@ function StatCard({ value, label, accent }: { value: number; label: string; acce
   )
 }
 
-function DashboardTab({ teams, leagues, categories, onGoTo }: {
-  teams: Team[]; leagues: League[]; categories: Category[]; onGoTo: (tab: Tab) => void
+interface AttentionFlag { label: string; color: string; actionLabel: string; onClick: () => void }
+interface ActivityItem { id: string; text: string; date: string }
+
+function TeamsNeedingAttentionTable({ teams, categories, userRows, onGoTo }: {
+  teams: Team[]; categories: Category[]; userRows: UserRow[]
+  onGoTo: (tab: Tab) => void
+}) {
+  const rows = teams.map(t => {
+    const flags: AttentionFlag[] = []
+    if (!t.league_id) flags.push({ label: 'Sin liga', color: '#f59e0b', actionLabel: 'Asignar liga', onClick: () => onGoTo('equipos') })
+    const hasCoordinador = userRows.some(r => r.team_id === t.id && r.role === 'coordinador')
+    if (!hasCoordinador) flags.push({ label: 'Sin coordinador', color: '#ef4444', actionLabel: 'Asignar coordinador', onClick: () => onGoTo('equipos') })
+    const teamCategories = categories.filter(c => c.team_id === t.id)
+    if (teamCategories.length === 0) flags.push({ label: 'Sin categorías', color: '#a855f7', actionLabel: 'Ir a Equipos', onClick: () => onGoTo('equipos') })
+    return { team: t, flags }
+  }).filter(r => r.flags.length > 0)
+
+  if (rows.length === 0) return null
+
+  return (
+    <Card padding={false} className="px-4 mb-4">
+      <div className="flex items-center justify-between py-3 border-b border-gray-800">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={14} className="text-amber-400" />
+          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Equipos que requieren atención</span>
+        </div>
+        <span className="text-xs text-gray-500">{rows.length}</span>
+      </div>
+      {rows.slice(0, 6).map(({ team, flags }) => (
+        <div key={team.id} className="flex items-center gap-3 py-3 border-b border-gray-800/50 last:border-0">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden" style={{ background: team.primary_color + '26', color: team.primary_color }}>
+            {team.logo_url ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" /> : team.name[0]}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white truncate">{team.name}</p>
+            <div className="flex gap-1 flex-wrap mt-0.5">
+              {flags.map(f => (
+                <span key={f.label} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: f.color + '20', color: f.color }}>{f.label}</span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={flags[0].onClick}
+            className="shrink-0 text-xs font-bold px-2.5 py-1.5 rounded-lg"
+            style={{ background: '#1f2937', color: '#e5e7eb' }}
+          >
+            {flags[0].actionLabel}
+          </button>
+        </div>
+      ))}
+    </Card>
+  )
+}
+
+function RecentActivity({ items, loading }: { items: ActivityItem[]; loading: boolean }) {
+  if (loading || items.length === 0) return null
+  return (
+    <Card padding={false} className="px-4 mb-4">
+      <div className="flex items-center gap-2 py-3 border-b border-gray-800">
+        <BarChart3 size={14} className="text-blue-400" />
+        <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Actividad reciente</span>
+      </div>
+      {items.slice(0, 8).map(item => (
+        <div key={item.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-gray-800/40 last:border-0">
+          <p className="text-sm text-gray-300 truncate">{item.text}</p>
+          <span className="text-[10px] text-gray-600 shrink-0">{new Date(item.date).toLocaleDateString('es-CL')}</span>
+        </div>
+      ))}
+    </Card>
+  )
+}
+
+function DashboardTab({ teams, leagues, categories, userRows, onGoTo }: {
+  teams: Team[]; leagues: League[]; categories: Category[]; userRows: UserRow[]; onGoTo: (tab: Tab) => void
 }) {
   const withSponsor = categories.filter(c => c.sponsor_url).length
-  const unassigned = teams.filter(t => !t.league_id)
+  const [search, setSearch] = useState('')
+  const [activity, setActivity] = useState<ActivityItem[]>([])
+  const [loadingActivity, setLoadingActivity] = useState(true)
+
+  useEffect(() => {
+    const teamNameById = new Map(teams.map(t => [t.id, t.name]))
+    supabase.from('player_link_audit').select('id, team_id, action, created_at').order('created_at', { ascending: false }).limit(15)
+      .then(({ data }) => {
+        const ACTION_LABEL: Record<string, string> = {
+          claimed_via_invite: 'se vinculó una ficha en',
+          approved_request: 'se aprobó una vinculación en',
+          unlinked: 'se desvinculó una ficha en',
+        }
+        const auditItems: ActivityItem[] = (data ?? []).map(a => ({
+          id: a.id,
+          text: `${ACTION_LABEL[a.action] ?? a.action} ${teamNameById.get(a.team_id) ?? 'un club'}`,
+          date: a.created_at,
+        }))
+        const teamItems: ActivityItem[] = teams.slice(0, 8).map(t => ({
+          id: `team-${t.id}`, text: `Se creó el equipo ${t.name}`, date: t.created_at,
+        }))
+        setActivity([...auditItems, ...teamItems].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10))
+        setLoadingActivity(false)
+      })
+  }, [teams])
+
+  const filteredTeams = search.trim()
+    ? teams.filter(t => t.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : teams
 
   return (
     <div>
+      <div className="relative mb-5">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Buscar equipo..."
+          className="w-full bg-gray-900 border border-gray-800 rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-gray-600 text-sm outline-none"
+        />
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard value={teams.length} label="Equipos" accent="#22c55e" />
         <StatCard value={leagues.length} label="Ligas" accent="#3b82f6" />
@@ -739,24 +849,22 @@ function DashboardTab({ teams, leagues, categories, onGoTo }: {
         <StatCard value={withSponsor} label="Con auspiciador" accent="#f59e0b" />
       </div>
 
-      {unassigned.length > 0 && (
-        <div className="rounded-2xl border border-dashed border-gray-700 p-4 mb-4">
-          <p className="text-sm font-semibold text-white mb-1">
-            {unassigned.length} equipo{unassigned.length !== 1 ? 's' : ''} sin liga asignada
-          </p>
-          <p className="text-gray-500 text-xs mb-3">Asignalos desde la sección Equipos para que aparezcan en los rankings.</p>
-          <Button size="sm" onClick={() => onGoTo('equipos')}>Ir a Equipos</Button>
-        </div>
-      )}
+      <TeamsNeedingAttentionTable teams={teams} categories={categories} userRows={userRows} onGoTo={onGoTo} />
+
+      <RecentActivity items={activity} loading={loadingActivity} />
 
       <Card padding={false} className="px-4 mb-4">
         <div className="flex items-center gap-2 py-3 border-b border-gray-800">
           <Users2 size={14} className="text-green-400" />
-          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">Equipos recientes</span>
+          <span className="text-xs font-black tracking-wider text-gray-400 uppercase">
+            {search.trim() ? `Resultados (${filteredTeams.length})` : 'Equipos recientes'}
+          </span>
         </div>
-        {teams.length === 0 ? (
-          <p className="text-gray-600 text-sm text-center py-6">Todavía no se creó ningún equipo.</p>
-        ) : teams.slice(0, 6).map(t => (
+        {filteredTeams.length === 0 ? (
+          <p className="text-gray-600 text-sm text-center py-6">
+            {search.trim() ? 'Ningún equipo coincide con la búsqueda.' : 'Todavía no se creó ningún equipo.'}
+          </p>
+        ) : (search.trim() ? filteredTeams : filteredTeams.slice(0, 6)).map(t => (
           <button
             key={t.id}
             onClick={() => onGoTo('equipos')}
@@ -1152,7 +1260,7 @@ export function AdminPanelPage() {
         <p className="text-gray-500 text-sm mb-6 hidden md:block">{currentLabel} — TeamApp gestión de la plataforma</p>
         <h1 className="text-2xl font-bold text-white mb-1 md:hidden">{currentLabel}</h1>
 
-        {tab === 'dashboard' && <DashboardTab teams={teams} leagues={leagues} categories={categories} onGoTo={setTab} />}
+        {tab === 'dashboard' && <DashboardTab teams={teams} leagues={leagues} categories={categories} userRows={userRows} onGoTo={setTab} />}
         {tab === 'equipos' && <EquiposTab teams={teams} leagues={leagues} userRows={userRows} loading={loadingTeams} onTeamsChange={setTeams} onRefreshUsers={refreshUserRows} />}
         {tab === 'ligas' && <LigasTab leagues={leagues} teams={teams} onLeaguesChange={setLeagues} />}
         {tab === 'auspiciadores' && <AuspiciadoresTab teams={teams} leagues={leagues} categories={categories} onCategoriesChange={setCategories} />}
