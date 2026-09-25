@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronRight, ChevronLeft, Trophy, Calendar, TrendingUp, PieChart, Star, Shirt, HandMetal, Check, X as XIcon, HelpCircle, Target } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Trophy, Calendar, TrendingUp, PieChart, Star, Shirt, HandMetal, Check, X as XIcon, HelpCircle, Target, Users } from 'lucide-react'
 import { useTeamStore, useAuthStore } from '@/store/authStore'
 import { useDemoStore } from '@/store/demoStore'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
@@ -123,7 +123,8 @@ function NewsCarousel({ categoryId = null }: { teamColor: string; categoryId?: s
 }
 
 // ─── Featured photos carousel ──────────────────────────────────────────────────
-function FeaturedPhotosCarousel({ teamColor }: { teamColor: string }) {
+function FeaturedPhotosCarousel({ teamColor, slug }: { teamColor: string; slug: string }) {
+  const navigate = useNavigate()
   const { currentTeamId } = useTeamStore()
   const isDemo = !isSupabaseConfigured || isMockId(currentTeamId)
   const demoPhotos = useDemoStore(s => s.photos)
@@ -136,22 +137,24 @@ function FeaturedPhotosCarousel({ teamColor }: { teamColor: string }) {
       .then(({ data }) => setRealPhotos(data ?? []))
   }, [isDemo, currentTeamId])
 
-  const photos = (isDemo ? demoPhotos.filter(p => p.featured) : realPhotos).slice(0, 8)
+  const photos = isDemo ? demoPhotos.filter(p => p.featured) : realPhotos
   if (photos.length === 0) return null
+  const main = photos[0]
 
   return (
     <div className="mx-4">
-      <div className="flex items-center gap-2 mb-2">
-        <Star size={14} style={{ color: teamColor }} fill={teamColor} />
-        <span className="text-xs font-black tracking-wider text-white">FOTOS DESTACADAS</span>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Users size={14} style={{ color: teamColor }} />
+          <span className="text-xs font-black tracking-wider text-white">NUESTRO EQUIPO</span>
+        </div>
+        <button onClick={() => navigate(`/team/${slug}/photos`)} className="flex items-center gap-1 text-xs font-semibold" style={{ color: teamColor }}>
+          Ver galería <ChevronRight size={13} />
+        </button>
       </div>
-      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-        {photos.map(photo => (
-          <div key={photo.id} className="shrink-0 w-28 h-28 rounded-2xl overflow-hidden border border-gray-800">
-            <img src={photo.url} alt={photo.caption ?? ''} className="w-full h-full object-cover" loading="lazy" />
-          </div>
-        ))}
-      </div>
+      <button onClick={() => navigate(`/team/${slug}/photos`)} className="block w-full rounded-2xl overflow-hidden border border-gray-800" style={{ height: 180 }}>
+        <img src={main.url} alt={main.caption ?? ''} className="w-full h-full object-cover" loading="lazy" />
+      </button>
     </div>
   )
 }
@@ -427,7 +430,7 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo, realStats }: {
       <NewsCarousel teamColor={teamColor} />
 
       {/* Featured photos */}
-      <FeaturedPhotosCarousel teamColor={teamColor} />
+      <FeaturedPhotosCarousel teamColor={teamColor} slug={slug} />
 
       {categories.length === 0 ? (
         <div className="mx-4 rounded-2xl border border-dashed border-gray-800 py-10 text-center">
@@ -565,29 +568,24 @@ const ATTENDANCE_OPTS: { value: AttendanceStatus; label: string; icon: typeof Ch
   { value: 'absent', label: 'No voy', icon: XIcon, color: '#ef4444' },
 ]
 
-function MyPlayerPanel({ teamColor, nextMatch, standingsRows, teamName, myPlayerId, myStats, onSeeStandings }: {
-  teamColor: string
-  nextMatch: DisplayMatch | undefined
-  standingsRows: ComputedStanding[]
-  teamName: string
-  myPlayerId: string
-  myStats: PlayerStatRow | undefined
-  onSeeStandings: () => void
+// ─── Next match hero: both shields, date/hora/cancha, Voy/No voy ──────────────
+function NextMatchHero({ teamColor, teamLogoUrl, teamName, categoryName, nextMatch, myPlayerId }: {
+  teamColor: string; teamLogoUrl: string | null; teamName: string; categoryName: string
+  nextMatch: DisplayMatch | undefined; myPlayerId: string | null
 }) {
+  const { currentTeamId } = useTeamStore()
   const [status, setStatus] = useState<AttendanceStatus | null>(null)
   const [saving, setSaving] = useState<AttendanceStatus | null>(null)
 
   useEffect(() => {
-    if (!nextMatch) { setStatus(null); return }
+    if (!nextMatch || !myPlayerId) { setStatus(null); return }
     supabase.from('fixture_match_attendance').select('status')
       .eq('fixture_match_id', nextMatch.id).eq('player_id', myPlayerId).maybeSingle()
       .then(({ data }) => setStatus(data?.status ?? null))
   }, [nextMatch, myPlayerId])
 
-  const { currentTeamId } = useTeamStore()
-
   async function handleSetStatus(value: AttendanceStatus) {
-    if (!nextMatch || !currentTeamId) return
+    if (!nextMatch || !currentTeamId || !myPlayerId) return
     setSaving(value)
     const { error } = await supabase.from('fixture_match_attendance')
       .upsert({ fixture_match_id: nextMatch.id, player_id: myPlayerId, team_id: currentTeamId, status: value }, { onConflict: 'fixture_match_id,player_id' })
@@ -597,6 +595,80 @@ function MyPlayerPanel({ teamColor, nextMatch, standingsRows, teamName, myPlayer
     toast.success('Asistencia actualizada')
   }
 
+  if (!nextMatch) return null
+
+  const dateObj = new Date(nextMatch.date)
+
+  return (
+    <div className="mx-4 rounded-2xl border border-gray-800 overflow-hidden" style={{ background: '#0d1117' }}>
+      <div className="flex items-center justify-between px-4 pt-3 pb-2">
+        <div className="flex items-center gap-1.5 text-[10px] font-black tracking-wider" style={{ color: teamColor }}>
+          <Calendar size={12} /> PRÓXIMO PARTIDO
+        </div>
+        <span className="text-[10px] text-gray-500 font-bold">{categoryName.toUpperCase()}</span>
+      </div>
+
+      <div className="flex items-center px-4 pb-4 gap-3">
+        <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
+          <div className="w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center border-2 shrink-0" style={{ borderColor: teamColor + '60', background: teamColor + '15' }}>
+            {teamLogoUrl ? <img src={teamLogoUrl} alt={teamName} className="w-full h-full object-cover" /> : <span className="text-lg font-black" style={{ color: teamColor }}>{teamName[0]}</span>}
+          </div>
+          <p className="text-white text-xs font-bold text-center truncate max-w-full">{teamName}</p>
+        </div>
+
+        <span className="text-gray-600 text-sm font-black shrink-0">VS</span>
+
+        <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
+          <div className="w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center border-2 border-gray-700 bg-gray-800 shrink-0">
+            <Shirt size={22} className="text-gray-500" />
+          </div>
+          <p className="text-white text-xs font-bold text-center truncate max-w-full">{nextMatch.rival}</p>
+        </div>
+
+        <div className="flex flex-col gap-1.5 shrink-0 text-right pl-2 border-l border-gray-800">
+          <div className="flex items-center justify-end gap-1.5 text-[11px] text-gray-300">
+            <span>{format(dateObj, "EEE dd MMM", { locale: es })}</span>
+            <Calendar size={11} className="text-gray-500" />
+          </div>
+          <div className="flex items-center justify-end gap-1.5 text-[11px] text-gray-300">
+            <span>{format(dateObj, "HH:mm")}</span>
+          </div>
+          {nextMatch.location && (
+            <div className="flex items-center justify-end gap-1.5 text-[11px] text-gray-400 max-w-[110px]">
+              <span className="truncate">{nextMatch.location}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {myPlayerId && (
+        <div className="flex gap-1.5 px-4 pb-4">
+          {ATTENDANCE_OPTS.map(opt => {
+            const Icon = opt.icon
+            const active = status === opt.value
+            return (
+              <button
+                key={opt.value}
+                onClick={() => handleSetStatus(opt.value)}
+                disabled={saving !== null}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                style={active ? { background: opt.color, color: '#030712' } : { background: '#1f2937', color: '#9ca3af' }}
+              >
+                <Icon size={14} />
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MyStatsCard({ teamColor, standingsRows, teamName, myStats, onSeeStandings }: {
+  teamColor: string; standingsRows: ComputedStanding[]; teamName: string
+  myStats: PlayerStatRow | undefined; onSeeStandings: () => void
+}) {
   const myPosition = (() => {
     const idx = standingsRows.findIndex(r => r.name === teamName)
     return idx >= 0 ? idx + 1 : null
@@ -604,30 +676,18 @@ function MyPlayerPanel({ teamColor, nextMatch, standingsRows, teamName, myPlayer
 
   return (
     <div className="mx-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {nextMatch && (
-        <div className="rounded-2xl border border-gray-800 p-4" style={{ background: '#0d1117' }}>
-          <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Tu próximo partido</p>
-          <p className="text-white text-sm font-bold mb-3">vs {nextMatch.rival}</p>
-          <div className="flex gap-1.5">
-            {ATTENDANCE_OPTS.map(opt => {
-              const Icon = opt.icon
-              const active = status === opt.value
-              return (
-                <button
-                  key={opt.value}
-                  onClick={() => handleSetStatus(opt.value)}
-                  disabled={saving !== null}
-                  className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl text-[10px] font-bold transition-colors"
-                  style={active ? { background: opt.color + '25', color: opt.color, border: `1px solid ${opt.color}60` } : { background: '#1f2937', color: '#9ca3af', border: '1px solid transparent' }}
-                >
-                  <Icon size={14} />
-                  {opt.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      <div className="rounded-2xl border border-gray-800 p-4" style={{ background: '#0d1117' }}>
+        <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Posición en la liga</p>
+        {myPosition ? (
+          <button onClick={onSeeStandings} className="flex items-center gap-2">
+            <Trophy size={18} className="text-amber-400" />
+            <span className="text-lg font-black text-white">{myPosition}.º lugar</span>
+            <ChevronRight size={14} style={{ color: teamColor }} />
+          </button>
+        ) : (
+          <p className="text-gray-600 text-xs">Sin tabla todavía</p>
+        )}
+      </div>
 
       <div className="rounded-2xl border border-gray-800 p-4" style={{ background: '#0d1117' }}>
         <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Mis estadísticas</p>
@@ -645,11 +705,6 @@ function MyPlayerPanel({ teamColor, nextMatch, standingsRows, teamName, myPlayer
               <p className="text-2xl font-black text-white">{myStats.matches_played}</p>
               <p className="text-gray-500 text-[10px]">partidos</p>
             </div>
-            {myPosition && (
-              <button onClick={onSeeStandings} className="ml-auto flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: teamColor }}>
-                {myPosition}° <Trophy size={12} />
-              </button>
-            )}
           </div>
         ) : (
           <p className="text-gray-600 text-xs flex items-center gap-1.5"><Target size={13} /> Sin estadísticas todavía</p>
@@ -780,7 +835,7 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, 
 }) {
   const navigate = useNavigate()
   const currentYear = new Date().getFullYear()
-  const { fixtureMatches, categories, pointsPerWin, currentTeamId } = useTeamStore()
+  const { fixtureMatches, categories, pointsPerWin, currentTeamId, teamLogoUrl } = useTeamStore()
   const { user } = useAuthStore()
   const demoPlayers = useDemoStore(s => s.players)
   const activeCategory = categories.find(c => c.id === categoryId)
@@ -897,14 +952,22 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, 
         </button>
       </div>
 
-      {/* Mi próximo partido (asistencia) + mis estadísticas — solo si el usuario logueado tiene una ficha en esta categoría */}
+      {/* Próximo partido — visible para todos; Voy/No voy solo si tenés una ficha en esta categoría */}
+      <NextMatchHero
+        teamColor={teamColor}
+        teamLogoUrl={teamLogoUrl}
+        teamName={teamName}
+        categoryName={activeCategory?.name ?? ''}
+        nextMatch={nextMatch}
+        myPlayerId={myPlayerId}
+      />
+
+      {/* Posición + mis estadísticas — solo si el usuario logueado tiene una ficha en esta categoría */}
       {myPlayerId && (
-        <MyPlayerPanel
+        <MyStatsCard
           teamColor={teamColor}
-          nextMatch={nextMatch}
           standingsRows={standingsRows}
           teamName={teamName}
-          myPlayerId={myPlayerId}
           myStats={realStats.get(myPlayerId)}
           onSeeStandings={() => navigate(`/team/${slug}/standings`)}
         />

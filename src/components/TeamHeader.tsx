@@ -30,6 +30,15 @@ export function TeamHeader() {
 
   return (
     <div className="relative px-4 pt-5 pb-6 mb-1 overflow-hidden">
+      {/* Decorative stadium-lights backdrop — two soft spotlight cones + a
+          faint crowd-texture dot pattern, purely visual, same for every
+          club (no fabricated club-specific photo/content). */}
+      <div className="absolute inset-0 pointer-events-none" aria-hidden>
+        <div className="absolute -top-10 left-1/4 w-40 h-56 opacity-20" style={{ background: `conic-gradient(from 200deg at 50% 0%, transparent, #ffffff, transparent 40%)`, filter: 'blur(2px)' }} />
+        <div className="absolute -top-10 right-1/4 w-40 h-56 opacity-20" style={{ background: `conic-gradient(from 160deg at 50% 0%, transparent 60%, #ffffff, transparent)`, filter: 'blur(2px)' }} />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(#ffffff22 1px, transparent 1px)', backgroundSize: '10px 10px', maskImage: 'linear-gradient(180deg, black, transparent)' }} />
+      </div>
+
       {/* Top row: greeting + settings */}
       <div className="relative flex items-center justify-between mb-4">
         <div>
