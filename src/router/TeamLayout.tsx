@@ -11,6 +11,7 @@ import { useAuthStore, useTeamStore } from '@/store/authStore'
 import { useDemoStore } from '@/store/demoStore'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { mockTeam } from '@/lib/mock'
+import { vividDark } from '@/lib/utils'
 
 interface PublicPlayer { id: string; name: string; number: number | null; category_name: string | null; already_linked: boolean }
 
@@ -197,13 +198,12 @@ export function TeamLayout() {
       className="flex flex-col min-h-dvh"
       style={{
         paddingBottom: '72px',
-        // A vivid, full-page backdrop in the club's own color on the two
-        // "landing" screens (Inicio/Tabla) — a flat dark background reads as
-        // plain black for pale team colors, so this blends a strong wash of
-        // the color into a dark navy base instead of relying on low opacity
-        // over near-black.
+        // A vivid backdrop in the club's own hue — alpha-blending the raw hex
+        // over black desaturated pale colors into a murky olive/gray, so this
+        // derives an actually-saturated dark tone from the color's hue
+        // instead (readable with white text no matter how pale the original).
         background: isDashboard
-          ? `linear-gradient(180deg, ${teamColor}55 0%, #0a1020 340px, #05070d 100%)`
+          ? `linear-gradient(180deg, ${vividDark(teamColor, 22)} 0%, ${vividDark(teamColor, 14)} 340px, ${vividDark(teamColor, 9)} 100%)`
           : undefined,
       }}
     >
