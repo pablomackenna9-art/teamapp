@@ -659,6 +659,120 @@ function MyPlayerPanel({ teamColor, nextMatch, standingsRows, teamName, myPlayer
   )
 }
 
+// ─── Coordinador dashboard: roster completeness + call-up + quick actions ─────
+interface RosterSummary { total: number; withPhoto: number; withNumber: number }
+interface CallUpSummary { invited: number; confirmed: number; pending: number; absent: number }
+
+function Donut({ value, total, color }: { value: number; total: number; color: string }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0
+  const r = 26
+  const c = 2 * Math.PI * r
+  return (
+    <div className="relative w-16 h-16 shrink-0">
+      <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
+        <circle cx="32" cy="32" r={r} fill="none" stroke="#1f2937" strokeWidth="8" />
+        <circle
+          cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-xs font-black text-white">{pct}%</span>
+      </div>
+    </div>
+  )
+}
+
+function CoordinadorPanel({ slug, teamColor, categoryId, categoryName, nextMatch, isDemo }: {
+  slug: string; teamColor: string; categoryId: string; categoryName: string; nextMatch: DisplayMatch | undefined; isDemo: boolean
+}) {
+  const navigate = useNavigate()
+  const [roster, setRoster] = useState<RosterSummary | null>(null)
+  const [callUp, setCallUp] = useState<CallUpSummary | null>(null)
+
+  useEffect(() => {
+    if (isDemo) { setRoster(null); setCallUp(null); return }
+    supabase.from('players').select('photo_url, number').eq('category_id', categoryId).eq('is_active', true)
+      .then(({ data }) => {
+        const rows = data ?? []
+        setRoster({ total: rows.length, withPhoto: rows.filter(p => p.photo_url).length, withNumber: rows.filter(p => p.number != null).length })
+      })
+
+    if (!nextMatch) { setCallUp(null); return }
+    Promise.all([
+      supabase.from('players').select('id').eq('category_id', categoryId).eq('is_active', true),
+      supabase.from('fixture_match_attendance').select('status').eq('fixture_match_id', nextMatch.id),
+    ]).then(([{ data: players }, { data: attendance }]) => {
+      const total = players?.length ?? 0
+      const confirmed = (attendance ?? []).filter(a => a.status === 'confirmed').length
+      const absent = (attendance ?? []).filter(a => a.status === 'absent').length
+      setCallUp({ invited: total, confirmed, absent, pending: Math.max(0, total - confirmed - absent) })
+    })
+  }, [isDemo, categoryId, nextMatch])
+
+  if (isDemo) return null
+
+  return (
+    <div className="mx-4 flex flex-col gap-3">
+      {nextMatch && callUp && (
+        <div className="rounded-2xl border border-gray-800 p-4 flex items-center gap-4" style={{ background: '#0d1117' }}>
+          <div className="flex-1">
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1">Convocatoria — vs {nextMatch.rival}</p>
+            <p className="text-sm text-white font-semibold">{callUp.confirmed} confirmados · {callUp.pending} pendientes{callUp.absent > 0 ? ` · ${callUp.absent} ausentes` : ''}</p>
+          </div>
+          <Donut value={callUp.confirmed} total={callUp.invited} color={teamColor} />
+        </div>
+      )}
+
+      {roster && roster.total > 0 && (
+        <div className="rounded-2xl border border-gray-800 p-4" style={{ background: '#0d1117' }}>
+          <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-3">Completitud del plantel — {categoryName}</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-24 shrink-0">Con foto</span>
+              <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${(roster.withPhoto / roster.total) * 100}%`, background: teamColor }} />
+              </div>
+              <span className="text-xs text-gray-500 w-10 text-right shrink-0">{roster.withPhoto}/{roster.total}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-24 shrink-0">Con número</span>
+              <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${(roster.withNumber / roster.total) * 100}%`, background: teamColor }} />
+              </div>
+              <span className="text-xs text-gray-500 w-10 text-right shrink-0">{roster.withNumber}/{roster.total}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          onClick={() => nextMatch ? navigate(`/team/${slug}/matches/${nextMatch.id}`) : navigate(`/team/${slug}/fixture`)}
+          className="flex flex-col items-center gap-1.5 py-3 rounded-2xl border border-gray-800 text-gray-300 hover:bg-gray-900"
+        >
+          <TrendingUp size={16} style={{ color: teamColor }} />
+          <span className="text-[10px] font-bold text-center">Cargar resultado</span>
+        </button>
+        <button
+          onClick={() => navigate(`/team/${slug}/squad`)}
+          className="flex flex-col items-center gap-1.5 py-3 rounded-2xl border border-gray-800 text-gray-300 hover:bg-gray-900"
+        >
+          <Shirt size={16} style={{ color: teamColor }} />
+          <span className="text-[10px] font-bold text-center">Invitar jugadores</span>
+        </button>
+        <button
+          onClick={() => navigate(`/team/${slug}/news`)}
+          className="flex flex-col items-center gap-1.5 py-3 rounded-2xl border border-gray-800 text-gray-300 hover:bg-gray-900"
+        >
+          <Calendar size={16} style={{ color: teamColor }} />
+          <span className="text-[10px] font-bold text-center">Publicar aviso</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── CATEGORY VIEW ────────────────────────────────────────────────────────────
 function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, realStats, realPlayerCategoryId }: {
   slug: string; teamColor: string; teamName: string; isAdmin: boolean; categoryId: string; isDemo: boolean
@@ -754,6 +868,18 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, 
 
   return (
     <div className="flex flex-col gap-5 pb-6">
+      {/* Coordinador dashboard — convocatoria, completitud del plantel, acciones rápidas */}
+      {isAdmin && (
+        <CoordinadorPanel
+          slug={slug}
+          teamColor={teamColor}
+          categoryId={categoryId}
+          categoryName={activeCategory?.name ?? ''}
+          nextMatch={nextMatch}
+          isDemo={isDemo}
+        />
+      )}
+
       {/* Sponsor — top of the category */}
       <SponsorBanner sectionKey={`category-top-${categoryId}`} categoryId={categoryId} />
 
