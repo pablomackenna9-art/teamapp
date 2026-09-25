@@ -97,8 +97,9 @@ export function TeamLayout() {
   const [denied, setDenied] = useState(false)
   const [deniedTeamId, setDeniedTeamId] = useState<string | null>(null)
 
-  // Only show the header on the dashboard (root team path)
-  const isDashboard = location.pathname === `/team/${slug}`
+  // Same hero on Inicio and Tabla — the two "landing" screens for a club —
+  // so the escudo/nombre/colores stay consistent instead of only on Inicio.
+  const isDashboard = location.pathname === `/team/${slug}` || location.pathname === `/team/${slug}/standings`
 
   useEffect(() => {
     async function loadTeam() {
