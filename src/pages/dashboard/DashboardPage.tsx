@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronRight, ChevronLeft, Trophy, Calendar, TrendingUp, PieChart, Star, Shirt, HandMetal } from 'lucide-react'
-import { useTeamStore } from '@/store/authStore'
+import { ChevronRight, ChevronLeft, Trophy, Calendar, TrendingUp, PieChart, Star, Shirt, HandMetal, Check, X as XIcon, HelpCircle, Target } from 'lucide-react'
+import { useTeamStore, useAuthStore } from '@/store/authStore'
 import { useDemoStore } from '@/store/demoStore'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { isMockId } from '@/lib/storage'
@@ -9,10 +9,11 @@ import { calculateStandings } from '@/lib/standings'
 import { ourMatches, lastPlayedFor, nextUpcomingFor, ourScore, theirScore, type DisplayMatch } from '@/lib/matches'
 import { loadTeamPlayerStats, type PlayerStatRow } from '@/lib/playerStats'
 import { mockTeam, mockStats } from '@/lib/mock'
-import type { Category, ComputedStanding, Title, Post, Photo } from '@/types'
+import type { Category, ComputedStanding, Title, Post, Photo, AttendanceStatus } from '@/types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { SponsorBanner } from '@/components/SponsorBanner'
+import toast from 'react-hot-toast'
 
 function formatMatchDate(date: string) {
   return format(new Date(date), "EEE dd MMM · HH:mm", { locale: es })
@@ -557,6 +558,107 @@ function HomeView({ slug, teamColor, teamName, isAdmin, isDemo, realStats }: {
   )
 }
 
+// ─── My player: quick attendance for the next match + my own stats ───────────
+const ATTENDANCE_OPTS: { value: AttendanceStatus; label: string; icon: typeof Check; color: string }[] = [
+  { value: 'confirmed', label: 'Voy', icon: Check, color: '#22c55e' },
+  { value: 'maybe', label: 'Duda', icon: HelpCircle, color: '#f59e0b' },
+  { value: 'absent', label: 'No voy', icon: XIcon, color: '#ef4444' },
+]
+
+function MyPlayerPanel({ teamColor, nextMatch, standingsRows, teamName, myPlayerId, myStats, onSeeStandings }: {
+  teamColor: string
+  nextMatch: DisplayMatch | undefined
+  standingsRows: ComputedStanding[]
+  teamName: string
+  myPlayerId: string
+  myStats: PlayerStatRow | undefined
+  onSeeStandings: () => void
+}) {
+  const [status, setStatus] = useState<AttendanceStatus | null>(null)
+  const [saving, setSaving] = useState<AttendanceStatus | null>(null)
+
+  useEffect(() => {
+    if (!nextMatch) { setStatus(null); return }
+    supabase.from('fixture_match_attendance').select('status')
+      .eq('fixture_match_id', nextMatch.id).eq('player_id', myPlayerId).maybeSingle()
+      .then(({ data }) => setStatus(data?.status ?? null))
+  }, [nextMatch, myPlayerId])
+
+  const { currentTeamId } = useTeamStore()
+
+  async function handleSetStatus(value: AttendanceStatus) {
+    if (!nextMatch || !currentTeamId) return
+    setSaving(value)
+    const { error } = await supabase.from('fixture_match_attendance')
+      .upsert({ fixture_match_id: nextMatch.id, player_id: myPlayerId, team_id: currentTeamId, status: value }, { onConflict: 'fixture_match_id,player_id' })
+    setSaving(null)
+    if (error) { toast.error(error.message); return }
+    setStatus(value)
+    toast.success('Asistencia actualizada')
+  }
+
+  const myPosition = (() => {
+    const idx = standingsRows.findIndex(r => r.name === teamName)
+    return idx >= 0 ? idx + 1 : null
+  })()
+
+  return (
+    <div className="mx-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {nextMatch && (
+        <div className="rounded-2xl border border-gray-800 p-4" style={{ background: '#0d1117' }}>
+          <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Tu próximo partido</p>
+          <p className="text-white text-sm font-bold mb-3">vs {nextMatch.rival}</p>
+          <div className="flex gap-1.5">
+            {ATTENDANCE_OPTS.map(opt => {
+              const Icon = opt.icon
+              const active = status === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => handleSetStatus(opt.value)}
+                  disabled={saving !== null}
+                  className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl text-[10px] font-bold transition-colors"
+                  style={active ? { background: opt.color + '25', color: opt.color, border: `1px solid ${opt.color}60` } : { background: '#1f2937', color: '#9ca3af', border: '1px solid transparent' }}
+                >
+                  <Icon size={14} />
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-gray-800 p-4" style={{ background: '#0d1117' }}>
+        <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Mis estadísticas</p>
+        {myStats ? (
+          <div className="flex items-center gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-black" style={{ color: teamColor }}>{myStats.goals}</p>
+              <p className="text-gray-500 text-[10px]">goles</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-black text-blue-400">{myStats.assists}</p>
+              <p className="text-gray-500 text-[10px]">asis.</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-black text-white">{myStats.matches_played}</p>
+              <p className="text-gray-500 text-[10px]">partidos</p>
+            </div>
+            {myPosition && (
+              <button onClick={onSeeStandings} className="ml-auto flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: teamColor }}>
+                {myPosition}° <Trophy size={12} />
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="text-gray-600 text-xs flex items-center gap-1.5"><Target size={13} /> Sin estadísticas todavía</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── CATEGORY VIEW ────────────────────────────────────────────────────────────
 function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, realStats, realPlayerCategoryId }: {
   slug: string; teamColor: string; teamName: string; isAdmin: boolean; categoryId: string; isDemo: boolean
@@ -564,9 +666,17 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, 
 }) {
   const navigate = useNavigate()
   const currentYear = new Date().getFullYear()
-  const { fixtureMatches, categories, pointsPerWin } = useTeamStore()
+  const { fixtureMatches, categories, pointsPerWin, currentTeamId } = useTeamStore()
+  const { user } = useAuthStore()
   const demoPlayers = useDemoStore(s => s.players)
   const activeCategory = categories.find(c => c.id === categoryId)
+
+  const [myPlayerId, setMyPlayerId] = useState<string | null>(null)
+  useEffect(() => {
+    if (isDemo || !user || !currentTeamId) { setMyPlayerId(null); return }
+    supabase.from('players').select('id').eq('team_id', currentTeamId).eq('category_id', categoryId).eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => setMyPlayerId(data?.id ?? null))
+  }, [isDemo, user, currentTeamId, categoryId])
 
   const matches = ourMatches(fixtureMatches, teamName)
   const categoryMatches = matches.filter(m => m.category_id === categoryId).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
@@ -660,6 +770,19 @@ function CategoryView({ slug, teamColor, teamName, isAdmin, categoryId, isDemo, 
           <Shirt size={16} /> Ver plantel {activeCategory?.name} {currentYear}
         </button>
       </div>
+
+      {/* Mi próximo partido (asistencia) + mis estadísticas — solo si el usuario logueado tiene una ficha en esta categoría */}
+      {myPlayerId && (
+        <MyPlayerPanel
+          teamColor={teamColor}
+          nextMatch={nextMatch}
+          standingsRows={standingsRows}
+          teamName={teamName}
+          myPlayerId={myPlayerId}
+          myStats={realStats.get(myPlayerId)}
+          onSeeStandings={() => navigate(`/team/${slug}/standings`)}
+        />
+      )}
 
       {/* Category matches */}
       <div className="mx-4">

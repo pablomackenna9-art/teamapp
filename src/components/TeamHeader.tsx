@@ -16,6 +16,7 @@ const ROLE_LABEL: Record<string, string> = {
   captain: 'CAPITÁN',
   player: 'JUGADOR',
   dt: 'DT',
+  coordinador: 'COORDINADOR',
 }
 
 export function TeamHeader() {
@@ -25,50 +26,47 @@ export function TeamHeader() {
 
   const name = teamName || mockTeam.name
   const roleLabel = ROLE_LABEL[memberRole ?? 'player'] ?? 'JUGADOR'
-  const roleColor = memberRole === 'admin' ? '#f59e0b' : memberRole === 'captain' ? '#3b82f6' : memberRole === 'dt' ? '#a855f7' : teamColor
+  const roleColor = memberRole === 'admin' ? '#f59e0b' : memberRole === 'captain' ? '#3b82f6' : memberRole === 'dt' || memberRole === 'coordinador' ? '#a855f7' : teamColor
 
   return (
-    <div className="px-4 pt-4 pb-3 flex items-center gap-3">
-      {/* Avatar + greeting */}
-      <div
-        className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-black shrink-0"
-        style={{ background: teamColor, color: '#030712' }}
-      >
-        {initials(name)}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <p className="text-white font-bold text-base leading-tight">{getGreeting()} 👋</p>
-        <span
-          className="text-[10px] font-black px-2 py-0.5 rounded-full"
-          style={{ background: roleColor + '25', color: roleColor }}
-        >
-          {roleLabel}
-        </span>
-      </div>
-
-      {/* Team logo + settings */}
-      <div className="flex items-center gap-2">
+    <div
+      className="relative px-4 pt-5 pb-6 mb-1 overflow-hidden"
+      style={{ background: `radial-gradient(120% 100% at 50% -10%, ${teamColor}33 0%, #0b0f0d 60%)` }}
+    >
+      {/* Top row: greeting + settings */}
+      <div className="relative flex items-center justify-between mb-4">
+        <div>
+          <p className="text-white font-bold text-sm leading-tight">{getGreeting()} 👋</p>
+          <span
+            className="inline-block mt-1 text-[10px] font-black px-2 py-0.5 rounded-full"
+            style={{ background: roleColor + '25', color: roleColor }}
+          >
+            {roleLabel}
+          </span>
+        </div>
         <button
           onClick={() => navigate(`/team/${slug}/more`)}
-          className="w-8 h-8 rounded-full flex items-center justify-center border border-gray-800 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+          className="w-9 h-9 rounded-full flex items-center justify-center border border-gray-800 text-gray-400 hover:text-white hover:bg-gray-800 transition-colors shrink-0"
         >
           <Settings size={16} />
         </button>
+      </div>
 
-        <button
-          onClick={() => navigate(`/team/${slug}/more`)}
-          className="w-10 h-10 rounded-full overflow-hidden border-2 flex items-center justify-center shrink-0"
-          style={{ borderColor: teamColor + '60', background: teamColor + '20' }}
+      {/* Escudo grande + nombre del club */}
+      <div className="relative flex flex-col items-center text-center">
+        <div
+          className="w-24 h-24 rounded-3xl overflow-hidden border-4 flex items-center justify-center shadow-lg"
+          style={{ borderColor: teamColor + '70', background: teamColor + '15' }}
         >
           {teamLogoUrl ? (
             <img src={teamLogoUrl} alt={name} className="w-full h-full object-cover" />
           ) : (
-            <span className="text-lg font-black" style={{ color: teamColor }}>
-              {initials(name).slice(0, 1)}
+            <span className="text-3xl font-black" style={{ color: teamColor }}>
+              {initials(name)}
             </span>
           )}
-        </button>
+        </div>
+        <h1 className="text-white font-black text-xl mt-3 tracking-tight">{name}</h1>
       </div>
     </div>
   )
